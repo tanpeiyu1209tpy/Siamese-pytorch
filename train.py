@@ -346,6 +346,8 @@ if __name__ == "__main__":
         if local_rank == 0:
             loss_history.writer.close()
 '''
+# ---------------------------------- can pair --------------------------------
+'''
 import os
 
 import numpy as np
@@ -573,3 +575,7 @@ if __name__ == "__main__":
 
         if local_rank == 0:
             loss_history.writer.close()
+
+'''
+
+# ------------------ pair + classification ----------------------------
