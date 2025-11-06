@@ -310,19 +310,16 @@ class SiameseDataset(Dataset):
             self.center_crop = CenterCrop(input_shape)
 
     def _index_images(self, folder):
-        """
-        辅助函数：将文件夹内的图像按 '病人ID_侧别' 进行归类索引。
-        关键点：确保 L 和 R 被视为不同的样本。
-        """
         idx = {}
         if not os.path.exists(folder): return idx
         for f in os.listdir(folder):
             if f.endswith(('.jpg', '.png', '.jpeg')):
-                # --- 关键修改点: 文件名解析 ---
-                # 假设你的文件名格式类似: 003700f3..._L_CC_0.jpg
-                # 我们需要提取 "003700f3..._L" 作为唯一 ID
-                # .split('_')[:2] 取前两部分，用 "_" 连接，正好是 "病人ID_侧别"
-                patient_side_id = "_".join(f.split('_')[:2]) 
+                # 文件名: 0a30..._L_CC_4.jpg
+                # 使用 '_' 分割后: ['0a30...', 'L', 'CC', '4.jpg']
+                parts = f.split('_')
+                
+                # 取前两部分组合成唯一ID: "0a30..._L"
+                patient_side_id = f"{parts[0]}_{parts[1]}"
                 
                 if patient_side_id not in idx: 
                     idx[patient_side_id] = []
@@ -453,7 +450,4 @@ def dataset_collate(batch):
     images = torch.from_numpy(np.array([left_images, right_images])).type(torch.FloatTensor)
     labels = torch.from_numpy(np.array(labels)).type(torch.FloatTensor)
     return images, labels
-    images = torch.from_numpy(np.array([left_images, right_images])).type(torch.FloatTensor)
-    labels = torch.from_numpy(np.array(labels)).type(torch.FloatTensor)
-
-    return images, labels
+    
