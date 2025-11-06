@@ -38,78 +38,81 @@ class SiameseDataset(Dataset):
             self.center_crop = CenterCrop(input_shape)
 
     def _index_images(self, folder):
+        # idx 结构: {patient_side_id: [(path, cls_id), (path, cls_id), ...]}
         idx = {}
         if not os.path.exists(folder): return idx
-        # 使用 os.walk 递归查找，应对可能的子文件夹结构
         for root, dirs, files in os.walk(folder):
             for f in files:
                 if f.endswith(('.jpg', '.png', '.jpeg')):
-                    # 解析文件名: 0a30..._L_CC_4.jpg -> ID: 0a30..._L
+                    # 文件名示例: P001_L_CC_cls0_0.jpg
                     parts = f.split('_')
-                    if len(parts) >= 2:
+                    if len(parts) >= 4: # 确保有足够的下划线分割部分
                         patient_side_id = f"{parts[0]}_{parts[1]}"
+                        
+                        # 解析类别 ID: 找到以 'cls' 开头的部分
+                        cls_id = 0 # 默认为 0 (例如背景)
+                        for part in parts:
+                            if part.startswith('cls'):
+                                try:
+                                    cls_id = int(part[3:]) # 提取 'cls' 后面的数字
+                                except ValueError:
+                                    pass # 如果解析失败保持默认
+                                break
+                        
                         if patient_side_id not in idx: 
                             idx[patient_side_id] = []
-                        idx[patient_side_id].append(os.path.join(root, f))
+                        idx[patient_side_id].append((os.path.join(root, f), cls_id))
         return idx
 
+    # --- 修改 2: _list_images 解析类别 ---
     def _list_images(self, folder):
+        # images 结构: [(path, cls_id), (path, cls_id), ...]
         images = []
         if not os.path.exists(folder): return images
         for root, dirs, files in os.walk(folder):
             for f in files:
                 if f.endswith(('.jpg', '.png', '.jpeg')):
-                    images.append(os.path.join(root, f))
+                    cls_id = 0
+                    parts = f.split('_')
+                    for part in parts:
+                        if part.startswith('cls'):
+                            try:
+                                cls_id = int(part[3:])
+                            except ValueError: pass
+                            break
+                    images.append((os.path.join(root, f), cls_id))
         return images
 
     def __len__(self):
         return len(self.valid_patient_ids)
 
+    # --- 修改 3: __getitem__ 使用类别标签 ---
     def __getitem__(self, index):
-        '''
-        # 随机选择一个锚点病人
         patient_id = random.choice(self.valid_patient_ids)
         
         # --- Pair 1: 正样本对 ---
-        img1_pos = random.choice(self.cc_pos[patient_id])
-        img2_pos = random.choice(self.mlo_pos[patient_id])
+        # 现在 cc_pos[patient_id] 返回的是 (path, cls_id) 元组列表
+        img1_pos_path, img1_cls = random.choice(self.cc_pos[patient_id])
+        img2_pos_path, img2_cls = random.choice(self.mlo_pos[patient_id])
+        # [Match=1, CC类别, MLO类别]
+        labels_pos = [1, img1_cls, img2_cls] 
 
         # --- Pair 2: 负样本对 ---
-        img1_neg = img1_pos 
+        img1_neg_path, img1_cls_neg = img1_pos_path, img1_cls # Anchor 复用
+        
         if random.random() < 0.5 and len(self.mlo_neg) > 0:
-             img2_neg = random.choice(self.mlo_neg) # 困难负样本
+             img2_neg_path, img2_cls_neg = random.choice(self.mlo_neg) # Hard Negative
         else:
              other_id = random.choice(self.valid_patient_ids)
              while other_id == patient_id and len(self.valid_patient_ids) > 1:
                  other_id = random.choice(self.valid_patient_ids)
-             img2_neg = random.choice(self.mlo_pos[other_id]) # 简单负样本
+             img2_neg_path, img2_cls_neg = random.choice(self.mlo_pos[other_id]) # Easy Negative
 
-        images, labels = self._load_and_process_batch([img1_pos, img2_pos, img1_neg, img2_neg])
-        return images, labels
-        '''
-        # --- Pair 1: positive ---
-        img1_pos = random.choice(self.cc_pos[patient_id])
-        img2_pos = random.choice(self.mlo_pos[patient_id])
-        # [Match=1, CC=True(1), MLO=True(1)]
-        labels_pos = [1, 1, 1] 
-
-        # --- Pair 2: negative ---
-        img1_neg = img1_pos # 锚点依然是 CC真
-        if random.random() < 0.5 and len(self.mlo_neg) > 0:
-             img2_neg = random.choice(self.mlo_neg) # Hard Negative (假阳性)
-             # [Match=0, CC=True(1), MLO=False(0)]
-             labels_neg = [0, 1, 0]
-        else:
-             other_id = random.choice(self.valid_patient_ids)
-             while other_id == patient_id and len(self.valid_patient_ids) > 1:
-                 other_id = random.choice(self.valid_patient_ids)
-             img2_neg = random.choice(self.mlo_pos[other_id]) # Easy Negative (真病灶但不同人)
-             # [Match=0, CC=True(1), MLO=True(1)]
-             labels_neg = [0, 1, 1]
+        labels_neg = [0, img1_cls_neg, img2_cls_neg]
 
         return self._load_and_process_batch(
-            [img1_pos, img2_pos], labels_pos,
-            [img1_neg, img2_neg], labels_neg
+            [img1_pos_path, img2_pos_path], labels_pos,
+            [img1_neg_path, img2_neg_path], labels_neg
         )
 
     '''
@@ -543,4 +546,5 @@ def dataset_collate(batch):
             right_images.append(pair_imgs[1][i])
             labels.append(pair_labels[i])
 '''
+
 
