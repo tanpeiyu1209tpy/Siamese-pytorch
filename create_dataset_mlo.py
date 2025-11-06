@@ -1,3 +1,59 @@
+import torch
+import torch.nn as nn
+from nets.vgg import VGG16
+
+def get_img_output_length(width, height):
+    def get_output_length(input_length):
+        filter_sizes = [2, 2, 2, 2, 2]
+        padding = [0, 0, 0, 0, 0]
+        stride = 2
+        for i in range(5):
+            input_length = (input_length + 2 * padding[i] - filter_sizes[i]) // stride + 1
+        return input_length
+    return get_output_length(width) * get_output_length(height) 
+
+class Siamese(nn.Module):
+    def __init__(self, input_shape, pretrained=False, num_classes=3):
+        super(Siamese, self).__init__()
+        self.vgg = VGG16(pretrained, 3)
+        del self.vgg.avgpool
+        del self.vgg.classifier
+        
+        flat_shape = 512 * get_img_output_length(input_shape[1], input_shape[0])
+        
+        # --- 1. 匹配分支 (Matching Branch) ---
+        self.match_fc1 = torch.nn.Linear(flat_shape * 2, 512)
+        self.match_fc2 = torch.nn.Linear(512, 1)
+
+        # --- 2. 分类分支 (Classification Branches) ---
+        # 输出维度为 num_classes (例如 3: 背景, 肿块, 钙化)
+        self.cls_head_cc = nn.Sequential(
+            nn.Linear(flat_shape, 512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, num_classes) 
+        )
+        self.cls_head_mlo = nn.Sequential(
+            nn.Linear(flat_shape, 512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, num_classes)
+        )
+
+    def forward(self, x):
+        img1, img2 = x
+        f1 = torch.flatten(self.vgg.features(img1), 1)
+        f2 = torch.flatten(self.vgg.features(img2), 1)
+        
+        # 匹配任务
+        match_score = self.match_fc2(self.match_fc1(torch.cat([f1, f2], dim=1)))
+
+        # 分类任务
+        cls_score1 = self.cls_head_cc(f1)
+        cls_score2 = self.cls_head_mlo(f2)
+
+        return match_score, cls_score1, cls_score2
+
+# pairing
+'''
 import os
 import shutil
 import numpy as np
@@ -107,6 +163,8 @@ for pred_path in tqdm(pred_files, desc=f"Processing {VIEW_NAME}"):
         cnt_pos += 1
     elif max_iou < 0.1:
         shutil.copy(src_crop, CURRENT_OUTPUT_DIR / 'negative' / f"{original_filename}_{crop_index}.jpg")
+
+'''
         cnt_neg += 1
 
 print(f"[{VIEW_NAME}] Finished! Positive: {cnt_pos}, Negative: {cnt_neg}")
