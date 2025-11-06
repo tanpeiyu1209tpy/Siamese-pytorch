@@ -66,6 +66,7 @@ class SiameseDataset(Dataset):
         return len(self.valid_patient_ids)
 
     def __getitem__(self, index):
+        '''
         # 随机选择一个锚点病人
         patient_id = random.choice(self.valid_patient_ids)
         
@@ -85,7 +86,33 @@ class SiameseDataset(Dataset):
 
         images, labels = self._load_and_process_batch([img1_pos, img2_pos, img1_neg, img2_neg])
         return images, labels
+        '''
+        # --- Pair 1: positive ---
+        img1_pos = random.choice(self.cc_pos[patient_id])
+        img2_pos = random.choice(self.mlo_pos[patient_id])
+        # [Match=1, CC=True(1), MLO=True(1)]
+        labels_pos = [1, 1, 1] 
 
+        # --- Pair 2: negative ---
+        img1_neg = img1_pos # 锚点依然是 CC真
+        if random.random() < 0.5 and len(self.mlo_neg) > 0:
+             img2_neg = random.choice(self.mlo_neg) # Hard Negative (假阳性)
+             # [Match=0, CC=True(1), MLO=False(0)]
+             labels_neg = [0, 1, 0]
+        else:
+             other_id = random.choice(self.valid_patient_ids)
+             while other_id == patient_id and len(self.valid_patient_ids) > 1:
+                 other_id = random.choice(self.valid_patient_ids)
+             img2_neg = random.choice(self.mlo_pos[other_id]) # Easy Negative (真病灶但不同人)
+             # [Match=0, CC=True(1), MLO=True(1)]
+             labels_neg = [0, 1, 1]
+
+        return self._load_and_process_batch(
+            [img1_pos, img2_pos], labels_pos,
+            [img1_neg, img2_neg], labels_neg
+        )
+
+    '''
     def _load_and_process_batch(self, path_list):
         number_of_pairs = int(len(path_list) / 2)
         pairs_of_images = [np.zeros((number_of_pairs, 3, self.input_shape[0], self.input_shape[1])) for _ in range(2)]
@@ -115,7 +142,47 @@ class SiameseDataset(Dataset):
             labels[pair_idx] = 1 if pair_idx == 0 else 0
 
         return pairs_of_images, labels
+    '''
+    
+# ------------------------------------------------------------------
+    def _load_and_process_batch(self, pair1_paths, pair1_labels, pair2_paths, pair2_labels):
+        # 初始化数组: 2对样本
+        pairs_of_images = [np.zeros((2, 3, self.input_shape[0], self.input_shape[1])) for _ in range(2)]
+        # 初始化三个标签数组: [Match, Cls1, Cls2]
+        match_labels = np.zeros((2, 1))
+        cls1_labels = np.zeros((2, 1))
+        cls2_labels = np.zeros((2, 1))
 
+        # 处理 Pair 1
+        self._process_one_pair(0, pair1_paths, pair1_labels, pairs_of_images, match_labels, cls1_labels, cls2_labels)
+        # 处理 Pair 2
+        self._process_one_pair(1, pair2_paths, pair2_labels, pairs_of_images, match_labels, cls1_labels, cls2_labels)
+
+        return pairs_of_images, (match_labels, cls1_labels, cls2_labels)
+
+    def _process_one_pair(self, idx, paths, labels, images_arr, match_arr, cls1_arr, cls2_arr):
+        # 读取和预处理左图
+        img1 = self._read_and_augment(paths[0])
+        images_arr[0][idx, :, :, :] = img1
+        # 读取和预处理右图
+        img2 = self._read_and_augment(paths[1])
+        images_arr[1][idx, :, :, :] = img2
+        # 赋值标签
+        match_arr[idx] = labels[0]
+        cls1_arr[idx] = labels[1]
+        cls2_arr[idx] = labels[2]
+
+    def _read_and_augment(self, path):
+        image = Image.open(path)
+        image = cvtColor(image)
+        if self.autoaugment_flag:
+            image = self.AutoAugment(image, random=self.random)
+        else:
+            image = self.get_random_data(image, self.input_shape, random=self.random)
+        image = preprocess_input(np.array(image).astype(np.float32))
+        return np.transpose(image, [2, 0, 1])
+# ----------------------------------------------------------------------------
+    
     def rand(self, a=0, b=1):
         return np.random.rand()*(b-a) + a
     
@@ -178,6 +245,30 @@ class SiameseDataset(Dataset):
         image = self.policy(image)
         return image
 
+# ---------------------------------------------
+def dataset_collate(batch):
+    left_images, right_images = [], []
+    match_labels, cls1_labels, cls2_labels = [], [], []
+    
+    for pair_imgs, pair_lbls in batch:
+        # pair_imgs: [left_batch(2,3,H,W), right_batch(2,3,H,W)]
+        # pair_lbls: (match_batch(2,1), cls1_batch(2,1), cls2_batch(2,1))
+        for i in range(2): # 每个 item 有 2 对
+             left_images.append(pair_imgs[0][i])
+             right_images.append(pair_imgs[1][i])
+             match_labels.append(pair_lbls[0][i])
+             cls1_labels.append(pair_lbls[1][i])
+             cls2_labels.append(pair_lbls[2][i])
+
+    images = torch.from_numpy(np.array([left_images, right_images])).type(torch.FloatTensor)
+    # 返回三个标签 tensor 的元组
+    return images, (
+        torch.from_numpy(np.array(match_labels)).type(torch.FloatTensor),
+        torch.from_numpy(np.array(cls1_labels)).type(torch.FloatTensor),
+        torch.from_numpy(np.array(cls2_labels)).type(torch.FloatTensor)
+    )
+# ----------------------------------------------------    
+'''
 def dataset_collate(batch):
     left_images     = []
     right_images    = []
@@ -192,7 +283,7 @@ def dataset_collate(batch):
     labels = torch.from_numpy(np.array(labels)).type(torch.FloatTensor)
     return images, labels
     
-'''
+
 import random
 
 import cv2
@@ -452,3 +543,4 @@ def dataset_collate(batch):
             right_images.append(pair_imgs[1][i])
             labels.append(pair_labels[i])
 '''
+
