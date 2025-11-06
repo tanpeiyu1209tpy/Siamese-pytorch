@@ -10,15 +10,15 @@ VIEW_NAME = "CC"
 
 # 2. YOLO detect.py 的输出目录 (原始候选集)
 #    例如: /kaggle/working/runs/detect/cc_candidates
-DETECT_RUN_DIR = Path('/kaggle/working/runs/detect/cc_candidates')
+DETECT_RUN_DIR = Path('/kaggle/input/siamesedata1/cc_candidates/cc_candidates')
 
 # 3. 原始数据集的真实标签目录 (Ground Truth)
 #    例如: /kaggle/input/breast/data/cc_view/labels/train
-GT_LABELS_DIR = Path('/kaggle/input/breast/data/cc_view/labels/train')
+GT_LABELS_DIR = Path('/kaggle/input/breast/data/cc_view/images/train')
 
 # 4. 清洗后的数据存放根目录
 #    脚本会自动在下面创建 VIEW_NAME/positive 和 VIEW_NAME/negative
-OUTPUT_ROOT = Path('/kaggle/working/siamese_data_cleaned')
+OUTPUT_ROOT = Path('/kaggle/working/siamese_data_cleaned_cc')
 # =========================================================
 
 # 定义当前视角的输出目录
