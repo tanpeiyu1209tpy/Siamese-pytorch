@@ -34,13 +34,13 @@ class Siamese(nn.Module):
         self.cls_head_cc = nn.Sequential(
             nn.Linear(flat_shape, 512),
             nn.ReLU(inplace=True),
-            nn.Linear(512, 1) # 输出一个分类 Logit (是病灶/不是病灶)
+            nn.Linear(512, 3) # output 3 classes
         )
         # MLO 分支可以独立，也可以和 CC 共享权重。论文似乎是独立的。
         self.cls_head_mlo = nn.Sequential(
             nn.Linear(flat_shape, 512),
             nn.ReLU(inplace=True),
-            nn.Linear(512, 1)
+            nn.Linear(512, 3)
         )
 # --------------------------------------------------------
 
@@ -84,3 +84,4 @@ class Siamese(nn.Module):
         cls_score2 = self.cls_head_mlo(f2)  # MLO图片分类得分
 
         return match_score, cls_score1, cls_score2
+
