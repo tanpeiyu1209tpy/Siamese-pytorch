@@ -364,6 +364,60 @@ class SiameseDataset(Dataset):
         images, labels = self._convert_path_list_to_images_and_labels(batch_images_path)
         return images, labels
 
+#        def __getitem__(self, index):
+#        batch_images_path = []
+#    
+#        # ------------------------------
+#        # 随机选一个类别 c (例如 positive 或 negative)
+#        # ------------------------------
+#        c = random.randint(0, self.types - 1)
+#        same_class_paths = np.array(self.train_lines)[self.train_labels == c]
+#    
+#        # 按视角拆分
+#        cc_paths = [p for p in same_class_paths if 'CC' in p]
+#        mlo_paths = [p for p in same_class_paths if 'MLO' in p]
+#    
+#        # ------------------------------
+#        # 从两个不同视角中各选一张 (相似对)
+#        # ------------------------------
+#        if len(cc_paths) > 0 and len(mlo_paths) > 0:
+#            pos_path_1 = random.choice(cc_paths)
+#            pos_path_2 = random.choice(mlo_paths)
+#        else:
+#            # 若某类缺少一个视角，则退化为同视角采样
+#            pos_path_1, pos_path_2 = random.sample(list(same_class_paths), 2)
+#    
+#        batch_images_path.append(pos_path_1)
+#        batch_images_path.append(pos_path_2)
+#    
+#        # ------------------------------
+#        # 选出不同类别的一对 (不相似对)
+#        # ------------------------------
+#        diff_classes = list(range(self.types))
+#        diff_classes.remove(c)
+#        diff_c = random.choice(diff_classes)
+#    
+#        diff_class_paths = np.array(self.train_lines)[self.train_labels == diff_c]
+#        # 尽量保证来自不同视角
+#        diff_cc = [p for p in diff_class_paths if 'CC' in p]
+#        diff_mlo = [p for p in diff_class_paths if 'MLO' in p]
+#    
+#        if len(diff_cc) > 0 and len(diff_mlo) > 0:
+#            neg_path_1 = random.choice(diff_cc)
+#            neg_path_2 = random.choice(diff_mlo)
+#        else:
+#            neg_path_1, neg_path_2 = random.sample(list(diff_class_paths), 2)
+#    
+#        batch_images_path.append(neg_path_1)
+#        batch_images_path.append(neg_path_2)
+#    
+#        # ------------------------------
+#        # 转为模型输入格式
+#        # ------------------------------
+#        images, labels = self._convert_path_list_to_images_and_labels(batch_images_path)
+#        return images, labels
+
+
     def _convert_path_list_to_images_and_labels(self, path_list):
         #-------------------------------------------#
         #   len(path_list)      = 4
@@ -546,5 +600,6 @@ def dataset_collate(batch):
             right_images.append(pair_imgs[1][i])
             labels.append(pair_labels[i])
 '''
+
 
 
