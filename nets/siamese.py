@@ -23,7 +23,8 @@ class Siamese(nn.Module):
         del self.vgg.classifier
         
         flat_shape = 512 * get_img_output_length(input_shape[1], input_shape[0])
-        self.fully_connect1 = torch.nn.Linear(flat_shape, 512)
+        #self.fully_connect1 = torch.nn.Linear(flat_shape, 512)
+        self.fully_connect1 = torch.nn.Linear(flat_shape*2, 512)
         self.fully_connect2 = torch.nn.Linear(512, 1)
 
     def forward(self, x):
@@ -38,10 +39,12 @@ class Siamese(nn.Module):
         #-------------------------#     
         x1 = torch.flatten(x1, 1)
         x2 = torch.flatten(x2, 1)
-        x = torch.abs(x1 - x2)
+        #x = torch.abs(x1 - x2)
+        x = torch.cat([x1, x2], dim=1)
         #-------------------------#
         #   进行两次全连接
         #-------------------------#
         x = self.fully_connect1(x)
         x = self.fully_connect2(x)
         return x
+
