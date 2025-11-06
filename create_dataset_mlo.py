@@ -18,7 +18,7 @@ GT_LABELS_DIR = Path('/kaggle/input/breast/data/mlo_view/labels/train')
 
 # 4. 清洗后的数据存放根目录
 #    脚本会自动在下面创建 VIEW_NAME/positive 和 VIEW_NAME/negative
-OUTPUT_ROOT = Path('/kaggle/working/siamese_data_cleaned/mlo')
+OUTPUT_ROOT = Path('/kaggle/working/siamese_data_cleaned')
 # =========================================================
 
 # 定义当前视角的输出目录
