@@ -17,11 +17,11 @@ class Siamese(object):
         #   使用自己训练好的模型进行预测一定要修改model_path
         #   model_path指向logs文件夹下的权值文件
         #-----------------------------------------------------#
-        "model_path"        : 'model_data/Omniglot_vgg.pth',
+        "model_path"        : '/kaggle/working/logs/best_epoch_weights.pth',
         #-----------------------------------------------------#
         #   输入图片的大小。
         #-----------------------------------------------------#
-        "input_shape"       : [105, 105],
+        "input_shape"       : [224, 224],
         #--------------------------------------------------------------------#
         #   该变量用于控制是否使用letterbox_image对输入图像进行不失真的resize
         #   否则对图像进行CenterCrop
@@ -133,3 +133,4 @@ class Siamese(object):
         plt.text(-12, -12, 'Similarity:%.3f' % output, ha='center', va= 'bottom',fontsize=11)
         plt.show()
         return output
+
