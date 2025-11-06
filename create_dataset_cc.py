@@ -14,7 +14,7 @@ DETECT_RUN_DIR = Path('/kaggle/input/siamesedata1/cc_candidates/cc_candidates')
 
 # 3. 原始数据集的真实标签目录 (Ground Truth)
 #    例如: /kaggle/input/breast/data/cc_view/labels/train
-GT_LABELS_DIR = Path('/kaggle/input/breast/data/cc_view/images/train')
+GT_LABELS_DIR = Path('/kaggle/input/breast/data/cc_view/labels/train')
 
 # 4. 清洗后的数据存放根目录
 #    脚本会自动在下面创建 VIEW_NAME/positive 和 VIEW_NAME/negative
