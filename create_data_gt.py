@@ -61,7 +61,13 @@ def crop_gt_regions(image_path, label_path, output_dir):
             
             # save crop img
             # name_format: {ori name}_GT_{index}.jpg
-            save_name = f"{image_path.stem}_GT_{i}.jpg"
+            
+            
+            
+            #save_name = f"{image_path.stem}_GT_{i}.jpg"
+            save_name = f"{image_path.stem}_GT_{int(cls_id)}_{i}.jpg"
+            
+            
             save_path = output_dir / save_name
             cv2.imwrite(str(save_path), crop)
             count += 1
