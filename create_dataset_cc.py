@@ -77,7 +77,7 @@ for pred_path in tqdm(pred_files, desc=f"Processing {VIEW_NAME}"):
     gt_boxes = []
     with open(gt_path, 'r') as f:
         for line in f:
-            gt_boxes.append(list(map(float, line.strip().split()))[1:]) # 忽略类别，只取坐标
+            gt_boxes.append(list(map(float, line.strip().split()))[1:]) # ignore class only take coordinate ******** need changes 
     if not gt_boxes: continue
     gt_boxes_xyxy = xywh2xyxy(np.array(gt_boxes))
 
