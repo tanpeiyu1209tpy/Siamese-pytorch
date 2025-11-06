@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from .utils import get_lr
 
-
+'''
 def fit_one_epoch(model_train, model, loss, loss_history, optimizer, epoch, epoch_step, epoch_step_val, gen, genval, Epoch, cuda, fp16, scaler, save_period, save_dir, local_rank=0):
     total_loss      = 0
     total_accuracy  = 0
@@ -102,6 +102,151 @@ def fit_one_epoch(model_train, model, loss, loss_history, optimizer, epoch, epoc
         #-----------------------------------------------#
         #   保存权值
         #-----------------------------------------------#
+        if (epoch + 1) % save_period == 0 or epoch + 1 == Epoch:
+            torch.save(model.state_dict(), os.path.join(save_dir, "ep%03d-loss%.3f-val_loss%.3f.pth" % (epoch + 1, total_loss / epoch_step, val_loss / epoch_step_val)))
+
+        if len(loss_history.val_loss) <= 1 or (val_loss / epoch_step_val) <= min(loss_history.val_loss):
+            print('Save best model to best_epoch_weights.pth')
+            torch.save(model.state_dict(), os.path.join(save_dir, "best_epoch_weights.pth"))
+            
+
+        torch.save(model.state_dict(), os.path.join(save_dir, "last_epoch_weights.pth"))
+
+        '''
+import os
+import torch
+import torch.nn as nn
+from tqdm import tqdm
+from .utils import get_lr
+
+def fit_one_epoch(model_train, model, loss_fn, loss_history, optimizer, epoch, epoch_step, epoch_step_val, gen, genval, Epoch, cuda, fp16, scaler, save_period, save_dir, local_rank=0):
+    # 初始化记录器
+    total_loss = 0
+    total_match_acc = 0
+    total_cls_acc = 0 # 合并记录两个分类任务的平均准确率
+
+    val_loss = 0
+    val_match_acc = 0
+    val_cls_acc = 0
+    
+    if local_rank == 0:
+        print('Start Train')
+        pbar = tqdm(total=epoch_step, desc=f'Epoch {epoch + 1}/{Epoch}', postfix=dict, mininterval=0.3)
+        
+    model_train.train()
+    for iteration, batch in enumerate(gen):
+        if iteration >= epoch_step: break
+            
+        images, targets = batch[0], batch[1]
+        with torch.no_grad():
+            if cuda:
+                images = images.cuda(local_rank)
+                # targets 是一个元组 (match_labels, cls1_labels, cls2_labels)
+                match_lbl = targets[0].cuda(local_rank)
+                cls1_lbl = targets[1].cuda(local_rank)
+                cls2_lbl = targets[2].cuda(local_rank)
+
+        optimizer.zero_grad()
+        
+        if not fp16:
+            # 前向传播得到三个输出
+            match_out, cls1_out, cls2_out = model_train(images)
+            
+            # 计算三个任务的损失
+            loss_match = loss_fn(match_out, match_lbl)
+            loss_cls1 = loss_fn(cls1_out, cls1_lbl)
+            loss_cls2 = loss_fn(cls2_out, cls2_lbl)
+            
+            # 联合损失 (可以加权，这里简单相加)
+            loss = loss_match + loss_cls1 + loss_cls2
+            
+            loss.backward()
+            optimizer.step()
+        else:
+            from torch.cuda.amp import autocast
+            with autocast():
+                match_out, cls1_out, cls2_out = model_train(images)
+                loss_match = loss_fn(match_out, match_lbl)
+                loss_cls1 = loss_fn(cls1_out, cls1_lbl)
+                loss_cls2 = loss_fn(cls2_out, cls2_lbl)
+                loss = loss_match + loss_cls1 + loss_cls2
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+        # --- 计算指标 ---
+        with torch.no_grad():
+            # 匹配准确率
+            match_acc = torch.mean(torch.eq(torch.round(torch.sigmoid(match_out)), match_lbl).float())
+            # 分类准确率 (两个任务取平均)
+            cls1_acc = torch.mean(torch.eq(torch.round(torch.sigmoid(cls1_out)), cls1_lbl).float())
+            cls2_acc = torch.mean(torch.eq(torch.round(torch.sigmoid(cls2_out)), cls2_lbl).float())
+            avg_cls_acc = (cls1_acc + cls2_acc) / 2
+
+        total_loss += loss.item()
+        total_match_acc += match_acc.item()
+        total_cls_acc += avg_cls_acc.item()
+
+        if local_rank == 0:
+            pbar.set_postfix(**{
+                'loss': total_loss / (iteration + 1), 
+                'm_acc': total_match_acc / (iteration + 1),
+                'c_acc': total_cls_acc / (iteration + 1),
+                'lr': get_lr(optimizer)
+            })
+            pbar.update(1)
+
+    if local_rank == 0:
+        pbar.close()
+        print('Finish Train')
+        print('Start Validation')
+        pbar = tqdm(total=epoch_step_val, desc=f'Epoch {epoch + 1}/{Epoch}', postfix=dict, mininterval=0.3)
+
+    # --- 验证循环 (逻辑同上) ---
+    model_train.eval()
+    for iteration, batch in enumerate(genval):
+        if iteration >= epoch_step_val: break
+        
+        images, targets = batch[0], batch[1]
+        with torch.no_grad():
+            if cuda:
+                images = images.cuda(local_rank)
+                match_lbl = targets[0].cuda(local_rank)
+                cls1_lbl = targets[1].cuda(local_rank)
+                cls2_lbl = targets[2].cuda(local_rank)
+
+            match_out, cls1_out, cls2_out = model_train(images)
+            loss_match = loss_fn(match_out, match_lbl)
+            loss_cls1 = loss_fn(cls1_out, cls1_lbl)
+            loss_cls2 = loss_fn(cls2_out, cls2_lbl)
+            loss = loss_match + loss_cls1 + loss_cls2
+
+            match_acc = torch.mean(torch.eq(torch.round(torch.sigmoid(match_out)), match_lbl).float())
+            cls1_acc = torch.mean(torch.eq(torch.round(torch.sigmoid(cls1_out)), cls1_lbl).float())
+            cls2_acc = torch.mean(torch.eq(torch.round(torch.sigmoid(cls2_out)), cls2_lbl).float())
+            avg_cls_acc = (cls1_acc + cls2_acc) / 2
+
+        val_loss += loss.item()
+        val_match_acc += match_acc.item()
+        val_cls_acc += avg_cls_acc.item()
+
+        if local_rank == 0:
+            pbar.set_postfix(**{
+                'val_loss': val_loss / (iteration + 1),
+                'val_m_acc': val_match_acc / (iteration + 1),
+                'val_c_acc': val_cls_acc / (iteration + 1)
+            })
+            pbar.update(1)
+
+    if local_rank == 0:
+        pbar.close()
+        print('Finish Validation')
+        # 注意：loss_history 可能需要修改以支持记录多个指标，这里暂时只记录总 loss
+        loss_history.append_loss(epoch + 1, total_loss / epoch_step, val_loss / epoch_step_val)
+        print('Epoch:'+ str(epoch+1) + '/' + str(Epoch))
+        print('Total Loss: %.3f || Val Loss: %.3f ' % (total_loss / epoch_step, val_loss / epoch_step_val))
+        
         if (epoch + 1) % save_period == 0 or epoch + 1 == Epoch:
             torch.save(model.state_dict(), os.path.join(save_dir, "ep%03d-loss%.3f-val_loss%.3f.pth" % (epoch + 1, total_loss / epoch_step, val_loss / epoch_step_val)))
 
