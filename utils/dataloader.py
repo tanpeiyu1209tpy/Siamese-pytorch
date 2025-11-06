@@ -308,7 +308,7 @@ class SiameseDataset(Dataset):
             self.policy = ImageNetPolicy()
             self.resize = Resize(input_shape[0] if input_shape[0] == input_shape[1] else input_shape)
             self.center_crop = CenterCrop(input_shape)
-
+'''
     def _index_images(self, folder):
         idx = {}
         if not os.path.exists(folder): return idx
@@ -330,7 +330,44 @@ class SiameseDataset(Dataset):
         """辅助函数：简单列出文件夹下所有图像路径"""
         if not os.path.exists(folder): return []
         return [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(('.jpg', '.png', '.jpeg'))]
+'''
+    def _index_images(self, folder):
+        """
+        修改版：使用 os.walk 递归查找所有子文件夹中的图片。
+        """
+        idx = {}
+        if not os.path.exists(folder): return idx
+        
+        # os.walk 会遍历 folder 下的所有子目录
+        for root, dirs, files in os.walk(folder):
+            for f in files:
+                if f.endswith(('.jpg', '.png', '.jpeg')):
+                    # 你的文件名示例: 0a3018e7ad1d1d7d2e142c2ca7c518fa_L_CC_4.jpg
+                    # 提取唯一ID: 0a30...fa_L
+                    parts = f.split('_')
+                    # 确保至少有两部分才进行合并，防止异常文件名报错
+                    if len(parts) >= 2:
+                        patient_side_id = f"{parts[0]}_{parts[1]}"
+                        
+                        if patient_side_id not in idx: 
+                            idx[patient_side_id] = []
+                        # 注意：这里 join 的是 root，即当前文件所在的子目录路径
+                        idx[patient_side_id].append(os.path.join(root, f))
+        return idx
 
+    def _list_images(self, folder):
+        """
+        修改版：使用 os.walk 递归列出目录下所有图像路径
+        """
+        images = []
+        if not os.path.exists(folder): return images
+        
+        for root, dirs, files in os.walk(folder):
+            for f in files:
+                if f.endswith(('.jpg', '.png', '.jpeg')):
+                    images.append(os.path.join(root, f))
+        return images
+        
     def __len__(self):
         # 定义一个 epoch 的迭代次数。
         # 这里设置为合格样本数量，你也可以乘以一个系数让每个 epoch 跑得更久
@@ -451,3 +488,4 @@ def dataset_collate(batch):
     labels = torch.from_numpy(np.array(labels)).type(torch.FloatTensor)
     return images, labels
     
+
