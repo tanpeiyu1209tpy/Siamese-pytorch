@@ -15,7 +15,31 @@ CURRENT_OUTPUT_DIR = OUTPUT_ROOT / VIEW_NAME
 (CURRENT_OUTPUT_DIR / 'positive').mkdir(parents=True, exist_ok=True)
 (CURRENT_OUTPUT_DIR / 'negative').mkdir(parents=True, exist_ok=True)
 
-# ... (xywh2xyxy 和 compute_iou_numpy 函数保持不变，省略) ...
+def xywh2xyxy(x):
+    # convert [x_c, y_c, w, h] -> [x1, y1, x2, y2]
+    y = np.copy(x)
+    y[..., 0] = x[..., 0] - x[..., 2] / 2  # x1
+    y[..., 1] = x[..., 1] - x[..., 3] / 2  # y1
+    y[..., 2] = x[..., 0] + x[..., 2] / 2  # x2
+    y[..., 3] = x[..., 1] + x[..., 3] / 2  # y2
+    return y
+
+def compute_iou_numpy(box1, boxes2):
+    # cal box1 and box2 IOU
+    b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
+    b2_x1, b2_y1, b2_x2, b2_y2 = boxes2[:, 0], boxes2[:, 1], boxes2[:, 2], boxes2[:, 3]
+
+    inter_rect_x1 = np.maximum(b1_x1, b2_x1)
+    inter_rect_y1 = np.maximum(b1_y1, b2_y1)
+    inter_rect_x2 = np.minimum(b1_x2, b2_x2)
+    inter_rect_y2 = np.minimum(b1_y2, b2_y2)
+
+    inter_area = np.maximum(0, inter_rect_x2 - inter_rect_x1) * np.maximum(0, inter_rect_y2 - inter_rect_y1)
+    b1_area = (b1_x2 - b1_x1) * (b1_y2 - b1_y1)
+    b2_area = (b2_x2 - b2_x1) * (b2_y2 - b2_y1)
+
+    iou = inter_area / (b1_area + b2_area - inter_area + 1e-6)
+    return iou
 
 print(f"Starting data cleaning for view: {VIEW_NAME}...")
 pred_labels_dir = DETECT_RUN_DIR / 'labels'
