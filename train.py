@@ -9,8 +9,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 # [ 关键修改 ] 导入你新的模型和 Dataloader
-from nets.siamese import CMCNet
-from utils.dataloader import SiameseDataset, dataset_collate
+from cmc_net import CMCNet
+from dataloader import SiameseDataset, dataset_collate
 
 from utils.callbacks import LossHistory
 from utils.utils import (get_lr_scheduler, set_optimizer_lr, show_config)
@@ -295,6 +295,13 @@ if __name__ == "__main__":
             val_match_loss = 0
             val_cls_loss = 0
             
+            # --- [ 新增 ] 用于计算 Accuracy ---
+            val_match_correct = 0
+            val_cls_cc_correct = 0
+            val_cls_mlo_correct = 0
+            val_total_samples = 0
+            # --- [ 新增结束 ] ---
+            
             if local_rank == 0:
                 print('--- Validation ---')
                 pbar = tqdm(total=epoch_step_val, desc=f'Val  ', postfix=dict, mininterval=0.3)
@@ -313,7 +320,7 @@ if __name__ == "__main__":
                         images_mlo = images_mlo.cuda(local_rank)
                         match_targets = match_targets.cuda(local_rank)
                         cls_cc_targets = cls_cc_targets.cuda(local_rank)
-                        cls_mlo_targets = cls_mlo_targets.cuda(local_rank)
+                    cls_mlo_targets = cls_mlo_targets.cuda(local_rank)
 
                     match_preds, cls_cc_preds, cls_mlo_preds = model_train((images_cc, images_mlo))
                     
@@ -328,8 +335,33 @@ if __name__ == "__main__":
                     val_match_loss += loss_m.item()
                     val_cls_loss += (loss_c_cc.item() + loss_c_mlo.item()) / 2
                     
+                    # --- [ 新增 ] 计算 Accuracy ---
+                    # 1. Match Accuracy
+                    match_preds_binary = (match_preds > 0).float()
+                    val_match_correct += (match_preds_binary == match_targets).sum().item()
+                    
+                    # 2. CC Class Accuracy
+                    cls_cc_preds_labels = torch.argmax(cls_cc_preds, dim=1)
+                    val_cls_cc_correct += (cls_cc_preds_labels == cls_cc_targets).sum().item()
+                    
+                    # 3. MLO Class Accuracy
+                    cls_mlo_preds_labels = torch.argmax(cls_mlo_preds, dim=1)
+                    val_cls_mlo_correct += (cls_mlo_preds_labels == cls_mlo_targets).sum().item()
+                    
+                    val_total_samples += match_targets.size(0)
+                    # --- [ 新增结束 ] ---
+                    
                 if local_rank == 0:
-                    pbar.set_postfix(**{'val_loss' : val_total_loss / (iteration + 1)})
+                    # --- [ 修改 ] 更新 pbar ---
+                    running_match_acc = val_match_correct / val_total_samples if val_total_samples > 0 else 0
+                    running_cls_acc = (val_cls_cc_correct + val_cls_mlo_correct) / (val_total_samples * 2) if val_total_samples > 0 else 0
+                    
+                    pbar.set_postfix(**{
+                        'val_loss' : val_total_loss / (iteration + 1),
+                        'match_acc': f"{running_match_acc:.4f}",
+                        'cls_acc'  : f"{running_cls_acc:.4f}"
+                    })
+                    # --- [ 修改结束 ] ---
                     pbar.update(1)
             
             # --- Epoch 结束 ---
@@ -337,12 +369,24 @@ if __name__ == "__main__":
                 pbar.close()
                 avg_train_loss = total_loss / epoch_step
                 avg_val_loss = val_total_loss / epoch_step_val
+                
+                # --- [ 新增 ] 计算最终 Accuracy ---
+                final_match_acc = val_match_correct / val_total_samples
+                final_cls_cc_acc = val_cls_cc_correct / val_total_samples
+                final_cls_mlo_acc = val_cls_mlo_correct / val_total_samples
+                avg_cls_acc = (final_cls_cc_acc + final_cls_mlo_acc) / 2
+                # --- [ 新增结束 ] ---
+                
+                # --- [ 修改 ] 更新打印信息 ---
                 print(f'Epoch {epoch + 1}/{Epoch} - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}')
+                print(f'  [Validation] Match Acc: {final_match_acc:.4f}, Avg Class Acc: {avg_cls_acc:.4f} (CC: {final_cls_cc_acc:.4f}, MLO: {final_cls_mlo_acc:.4f})')
+                # --- [ 修改结束 ] ---
                 
                 if loss_history:
                     loss_history.append_loss(avg_train_loss, avg_val_loss)
                 
                 if (epoch + 1) % save_period == 0 or epoch + 1 == Epoch:
+                    # --- [ 修改 ] 保存文件名中加入 val_loss ---
                     torch.save(model.state_dict(), os.path.join(save_dir, f'ep{epoch + 1:03d}-loss{avg_train_loss:.4f}-val_loss{avg_val_loss:.4f}.pth'))
 
         if local_rank == 0:
