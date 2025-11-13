@@ -29,12 +29,12 @@ if __name__ == "__main__":
     #   [ 关键修改 ] 数据集路径
     #   指向你用 "paper_strategy" 脚本生成的路径
     #----------------------------------------------------#
-    dataset_path    = "/kaggle/working/siamese_data_from_paper_strategy"
+    dataset_path    = "/kaggle/working/siamese_data_train"
     # --- [ 新增 ] ---
     #   [ 关键修改 ] 验证集路径
     #   请确保你已手动创建此文件夹并移入了约 10-20% 的 *病人* 数据
     #----------------------------------------------------#
-    val_dataset_path = "/kaggle/working/siamese_data_validation" 
+    val_dataset_path = "/kaggle/working/siamese_data_val" 
     
     #----------------------------------------------------#
     #   [ 关键修改 ] 输入图像的大小
