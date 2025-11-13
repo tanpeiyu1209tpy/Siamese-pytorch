@@ -175,7 +175,8 @@ class SiameseDataset(Dataset):
         
         # [关键修正] 为不同 loss 初始化不同类型的标签
         # (2, 1)
-        match_labels = np.zeros((2, 1), dtype=np.float32) # For BCEWithLogitsLoss
+        #match_labels = np.zeros((2, 1), dtype=np.float32) # For BCEWithLogitsLoss
+        match_labels = np.zeros((2,), dtype=np.float32)  # 原本是 (2,1)
         cls1_labels  = np.zeros((2, 1), dtype=np.int64)   # For CrossEntropyLoss
         cls2_labels  = np.zeros((2, 1), dtype=np.int64)   # For CrossEntropyLoss
 
@@ -325,11 +326,14 @@ def dataset_collate(batch):
 
     # images[0] = 所有 CC (left) 图像 (B, 3, H, W)
     # images[1] = 所有 MLO (right) 图像 (B, 3, H, W)
-    images = torch.from_numpy(np.array([left_images, right_images])).type(torch.FloatTensor)
+    # images = torch.from_numpy(np.array([left_images, right_images])).type(torch.FloatTensor)
+    images_cc = torch.stack([torch.from_numpy(img) for img in left_images]).float()
+    images_mlo = torch.stack([torch.from_numpy(img) for img in right_images]).float()
     
     # [关键修正]
     # match_labels 用于 BCEWithLogitsLoss, 需要 Float
-    match_labels_tensor = torch.from_numpy(np.array(match_labels)).type(torch.FloatTensor)
+    # match_labels_tensor = torch.from_numpy(np.array(match_labels)).type(torch.FloatTensor)
+    match_labels_tensor = torch.from_numpy(np.array(match_labels)).float().squeeze()
     
     # cls_labels 用于 CrossEntropyLoss, 需要 Long 
     # 并且 .squeeze() 将 (B, 1) 变为 (B,)
@@ -337,7 +341,9 @@ def dataset_collate(batch):
     cls2_labels_tensor = torch.from_numpy(np.array(cls2_labels)).type(torch.LongTensor).squeeze()
     
     # 返回三个标签 tensor 的元组
-    return images, (match_labels_tensor, cls1_labels_tensor, cls2_labels_tensor)
+    #return images, (match_labels_tensor, cls1_labels_tensor, cls2_labels_tensor)
+    return (images_cc, images_mlo), (match_labels_tensor, cls1_labels_tensor, cls2_labels_tensor)
+    
 
 '''
 import os
@@ -941,6 +947,7 @@ def dataset_collate(batch):
             right_images.append(pair_imgs[1][i])
             labels.append(pair_labels[i])
 '''
+
 
 
 
