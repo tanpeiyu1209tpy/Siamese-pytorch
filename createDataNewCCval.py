@@ -20,7 +20,7 @@ GT_LABELS_DIR = Path('/kaggle/input/breast/data/cc_view/labels/validation')
 DETECT_RUN_DIR = Path('/kaggle/input/siamesedata/siameseD/val/cc')
 
 # 4. 最终输出的根目录
-OUTPUT_ROOT = Path('/kaggle/working/siamese_data_from_paper_strategy')
+OUTPUT_ROOT = Path('/kaggle/working/siamese_data_val')
 
 # --- 参数配置 ---
 # 论文中使用的 patch 尺寸
