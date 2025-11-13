@@ -456,8 +456,8 @@ class SiameseDataset(Dataset):
             [img1_pos_path, img2_pos_path], labels_pos,
             [img1_neg_path, img2_neg_path], labels_neg
         )
-'''
-    '''
+
+
     def _load_and_process_batch(self, path_list):
         number_of_pairs = int(len(path_list) / 2)
         pairs_of_images = [np.zeros((number_of_pairs, 3, self.input_shape[0], self.input_shape[1])) for _ in range(2)]
@@ -487,8 +487,7 @@ class SiameseDataset(Dataset):
             labels[pair_idx] = 1 if pair_idx == 0 else 0
 
         return pairs_of_images, labels
-    '''
- '''   
+   
 # ------------------------------------------------------------------
     def _load_and_process_batch(self, pair1_paths, pair1_labels, pair2_paths, pair2_labels):
         # 初始化数组: 2对样本
@@ -613,8 +612,7 @@ def dataset_collate(batch):
         torch.from_numpy(np.array(cls2_labels)).type(torch.FloatTensor)
     )
 # ----------------------------------------------------    
-'''
-'''
+
 def dataset_collate(batch):
     left_images     = []
     right_images    = []
@@ -943,6 +941,7 @@ def dataset_collate(batch):
             right_images.append(pair_imgs[1][i])
             labels.append(pair_labels[i])
 '''
+
 
 
 
