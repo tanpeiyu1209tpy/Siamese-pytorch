@@ -6,7 +6,7 @@ from tqdm import tqdm
 from PIL import Image, ImageOps
 
 # ================= 配置区域 =================
-VIEW_NAME = "CC_val" 
+VIEW_NAME = "CC" 
 # VIEW_NAME = "MLO" # 跑 MLO 时取消注释这行，并修改下面的路径
 
 # --- 路径配置 ---
