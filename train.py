@@ -81,7 +81,7 @@ if __name__ == "__main__":
     margin = 10.0
     loss_match_fn = ContrastiveLoss(margin=margin)
     loss_cls_fn   = nn.CrossEntropyLoss()
-    loss_weights  = {'alpha':1.0, 'beta':1.0, 'gamma':0.1}
+    loss_weights  = {'alpha':1.0, 'beta':1.0, 'gamma':0.0}
 
     # ----------------- Logging -----------------------------
     if local_rank == 0:
