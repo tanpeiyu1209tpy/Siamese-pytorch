@@ -50,7 +50,7 @@ if __name__ == "__main__":
     Epoch           = 50
     batch_size      = 32
 
-    Init_lr         = 1e-3
+    Init_lr         = 1e-4
     Min_lr          = 1e-5
     optimizer_type  = "sgd"
     momentum        = 0.9
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     margin = 10.0
     loss_match_fn = ContrastiveLoss(margin=margin)
     loss_cls_fn   = nn.CrossEntropyLoss()
-    loss_weights  = {'alpha':1.0, 'beta':0.5, 'gamma':0.1}
+    loss_weights  = {'alpha':1.0, 'beta':1.0, 'gamma':0.1}
 
     # ----------------- Logging -----------------------------
     if local_rank == 0:
