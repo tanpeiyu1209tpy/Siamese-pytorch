@@ -6,18 +6,18 @@ from tqdm import tqdm
 from PIL import Image, ImageOps
 
 # ================= 配置区域 =================
-VIEW_NAME = "CC" 
+VIEW_NAME = "CC_val" 
 # VIEW_NAME = "MLO" # 跑 MLO 时取消注释这行，并修改下面的路径
 
 # --- 路径配置 ---
 # 1. 原始图像 (必须提供，用于裁剪正样本)
-ORIGINAL_IMAGES_DIR = Path('/kaggle/input/breast/data/cc_view/images/train') 
+ORIGINAL_IMAGES_DIR = Path('/kaggle/input/breast/data/cc_view/images/validation') 
 
 # 2. 真实的 Ground Truth 标签路径 (YOLO格式)
-GT_LABELS_DIR = Path('/kaggle/input/breast/data/cc_view/labels/train')
+GT_LABELS_DIR = Path('/kaggle/input/breast/data/cc_view/labels/validation')
 
 # 3. YOLO detect 运行结果的路径 (用于裁剪负样本)
-DETECT_RUN_DIR = Path('/kaggle/input/siamesedata/siameseD/train/cc')
+DETECT_RUN_DIR = Path('/kaggle/input/siamesedata/siameseD/val/cc')
 
 # 4. 最终输出的根目录
 OUTPUT_ROOT = Path('/kaggle/working/siamese_data_from_paper_strategy')
