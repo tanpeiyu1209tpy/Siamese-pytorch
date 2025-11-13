@@ -9,8 +9,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 # [ 关键修改 ] 导入你新的模型和 Dataloader
-from cmc_net import CMCNet
-from dataloader import SiameseDataset, dataset_collate
+from nets.siamese import CMCNet
+from utils.dataloader import SiameseDataset, dataset_collate
 
 from utils.callbacks import LossHistory
 from utils.utils import (get_lr_scheduler, set_optimizer_lr, show_config)
