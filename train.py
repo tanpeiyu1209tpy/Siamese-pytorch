@@ -382,8 +382,10 @@ if __name__ == "__main__":
                 print(f'  [Validation] Match Acc: {final_match_acc:.4f}, Avg Class Acc: {avg_cls_acc:.4f} (CC: {final_cls_cc_acc:.4f}, MLO: {final_cls_mlo_acc:.4f})')
                 # --- [ 修改结束 ] ---
                 
+                #if loss_history:
+                #    loss_history.append_loss(avg_train_loss, avg_val_loss)
                 if loss_history:
-                    loss_history.append_loss(avg_train_loss, avg_val_loss)
+                    loss_history.append_loss(epoch + 1, avg_train_loss, avg_val_loss)
                 
                 if (epoch + 1) % save_period == 0 or epoch + 1 == Epoch:
                     # --- [ 修改 ] 保存文件名中加入 val_loss ---
