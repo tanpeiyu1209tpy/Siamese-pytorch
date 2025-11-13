@@ -47,7 +47,7 @@ if __name__ == "__main__":
     pretrained      = True
     model_path      = ""
     Init_Epoch      = 0
-    Epoch           = 100
+    Epoch           = 50
     batch_size      = 32
 
     Init_lr         = 1e-3
