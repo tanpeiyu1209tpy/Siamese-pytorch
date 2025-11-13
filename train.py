@@ -78,10 +78,10 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
 
     # ----------------- Loss functions ----------------------
-    margin = 5.0
+    margin = 10.0
     loss_match_fn = ContrastiveLoss(margin=margin)
     loss_cls_fn   = nn.CrossEntropyLoss()
-    loss_weights  = {'alpha':1.0, 'beta':1.0, 'gamma':0.1}
+    loss_weights  = {'alpha':1.0, 'beta':0.5, 'gamma':0.1}
 
     # ----------------- Logging -----------------------------
     if local_rank == 0:
@@ -148,10 +148,10 @@ if __name__ == "__main__":
             if iteration >= epoch_step: break
             (img_cc, img_mlo), (match_labels, cc_labels, mlo_labels) = batch
 
-            match_labels = match_labels.view(-1)
+            match_labels = match_labels.float().view(-1).to(device)
             img_cc, img_mlo = img_cc.to(device), img_mlo.to(device)
-            match_labels = match_labels.to(device)
             cc_labels, mlo_labels = cc_labels.to(device), mlo_labels.to(device)
+
 
             optimizer.zero_grad()
             distance, cc_logits, mlo_logits = model_train((img_cc, img_mlo))
@@ -185,9 +185,8 @@ if __name__ == "__main__":
             for iteration, batch in enumerate(gen_val):
                 if iteration >= epoch_step_val: break
                 (img_cc, img_mlo), (match_labels, cc_labels, mlo_labels) = batch
-                match_labels = match_labels.view(-1)
+                match_labels = match_labels.float().view(-1).to(device)
                 img_cc, img_mlo = img_cc.to(device), img_mlo.to(device)
-                match_labels = match_labels.to(device)
                 cc_labels, mlo_labels = cc_labels.to(device), mlo_labels.to(device)
 
                 distance, cc_logits, mlo_logits = model_train((img_cc, img_mlo))
