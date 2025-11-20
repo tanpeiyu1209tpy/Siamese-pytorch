@@ -1,5 +1,5 @@
 # ==========================================================
-# train_cmcnet.py — Final Version (Pair Training + Dual Validation)
+# train_cmcnet.py — Final Version (Pair Training + CC/MLO Classification Validation)
 # ==========================================================
 import os
 import torch
@@ -12,7 +12,7 @@ from nets.cmcnet import CMCNet
 from utils.dataloader import (
     SiameseDataset, 
     siamese_collate,
-    SingleImageDataset      # <── 新增
+    SingleImageDataset
 )
 
 # ------------------------------------------------------
@@ -40,6 +40,7 @@ def train_one_epoch(model, loader, optimizer, device, contrastive_loss, ce_loss,
     pbar = tqdm(loader, desc=f"Epoch {epoch}/{total_epoch} [Train]")
 
     total_loss = 0
+
     for (cc, mlo), (match_label, cc_label, mlo_label) in pbar:
 
         cc, mlo = cc.to(device), mlo.to(device)
@@ -64,23 +65,25 @@ def train_one_epoch(model, loader, optimizer, device, contrastive_loss, ce_loss,
         optimizer.step()
 
         total_loss += loss.item()
+
         pbar.set_postfix({
             "loss": total_loss / (pbar.n + 1),
             "match": loss_m.item(),
-            "cls": (loss_cc.item() + loss_mlo.item()) / 2
+            "cls": (loss_cc.item() + loss_mlo.item()) / 2,
         })
 
     return total_loss / len(loader)
 
 
+
 # ------------------------------------------------------
-# Validation (pair-based)
+# Validation for Matching (pair-based)
 # ------------------------------------------------------
 def validate_matching(model, loader, device, contrastive_loss, margin=5):
 
     model.eval()
     total_loss = 0
-    match_correct = 0
+    correct = 0
     total = 0
 
     threshold = margin / 2
@@ -92,53 +95,81 @@ def validate_matching(model, loader, device, contrastive_loss, margin=5):
             match_label = match_label.to(device)
 
             dist, _, _ = model((cc, mlo))
-
             loss = contrastive_loss(dist, match_label)
+
             total_loss += loss.item()
 
-            pred_match = (dist < threshold).long()
-            match_correct += (pred_match == match_label).sum().item()
-
+            pred = (dist < threshold).long()
+            correct += (pred == match_label).sum().item()
             total += cc.size(0)
 
-    return total_loss / len(loader), match_correct / total
+    return total_loss / len(loader), correct / total
+
 
 
 # ------------------------------------------------------
-# Validation (classification-based, single image)
+# Classification Validation — Correct CC/MLO routing
 # ------------------------------------------------------
-def validate_classification(model, loader, device):
+def validate_single_classification(model, loader, device):
 
     model.eval()
-    total = 0
-    correct = 0
+
+    total_cc = 0
+    total_mlo = 0
+    correct_cc = 0
+    correct_mlo = 0
 
     with torch.no_grad():
-        for imgs, labels in loader:
+        for imgs, labels, views in loader:
+
             imgs = imgs.to(device)
             labels = labels.to(device)
 
-            # 只用 CC 分支评估分类
-            _, cc_logits, _ = model((imgs, imgs))  
-            preds = torch.argmax(cc_logits, dim=1)
+            # mask CC & MLO
+            cc_mask = [v == "CC" for v in views]
+            mlo_mask = [v == "MLO" for v in views]
 
-            correct += (preds == labels).sum().item()
-            total += imgs.size(0)
+            # -- CC branch --
+            if any(cc_mask):
+                cc_imgs = imgs[cc_mask]
+                cc_labels = labels[cc_mask]
 
-    return correct / total
+                _, cc_logits, _ = model((cc_imgs, cc_imgs))
+                preds = cc_logits.argmax(dim=1)
+
+                correct_cc += (preds == cc_labels).sum().item()
+                total_cc += len(cc_labels)
+
+            # -- MLO branch --
+            if any(mlo_mask):
+                mlo_imgs = imgs[mlo_mask]
+                mlo_labels = labels[mlo_mask]
+
+                _, _, mlo_logits = model((mlo_imgs, mlo_imgs))
+                preds = mlo_logits.argmax(dim=1)
+
+                correct_mlo += (preds == mlo_labels).sum().item()
+                total_mlo += len(mlo_labels)
+
+    acc_cc = correct_cc / total_cc if total_cc > 0 else 0
+    acc_mlo = correct_mlo / total_mlo if total_mlo > 0 else 0
+
+    return acc_cc, acc_mlo
+
 
 
 
 # ------------------------------------------------------
-# Main Training Loop
+# Main Training
 # ------------------------------------------------------
 if __name__ == "__main__":
 
     train_dir = "/kaggle/input/s-dataset/siamese/train_data_siamese"
     val_dir   = "/kaggle/input/s-dataset/siamese/val_data_siamese"
 
-    input_size = (64, 64)
+    input_size = (64,64)
     num_classes = 3
+
     epochs = 50
     batch_size = 4
     lr = 1e-4
@@ -149,9 +180,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # =======================
-    # Load Dataset
-    # =======================
+    # Load datasets
     print("\n[INFO] Loading dataset...")
 
     train_dataset = SiameseDataset(train_dir, input_size, random_flag=True)
@@ -171,24 +200,19 @@ if __name__ == "__main__":
         num_workers=4
     )
 
-    # =======================
-    # Model & Loss
-    # =======================
+    # Model
     model = CMCNet(input_channels=3, num_classes=num_classes, pretrained=True)
     model.to(device)
 
     ce_loss = nn.CrossEntropyLoss()
     contrastive = ContrastiveLoss(margin)
 
-    loss_weights = {"alpha":1.0,"beta":1.0,"gamma":1.0}
-
+    loss_weights = {"alpha":1.0, "beta":1.0, "gamma":1.0}
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
-    # =======================
-    # Training
-    # =======================
-    best_val = 1e9
+    best_val_loss = 1e9
 
+    # Training Loop
     for epoch in range(1, epochs + 1):
 
         train_loss = train_one_epoch(
@@ -201,22 +225,24 @@ if __name__ == "__main__":
             model, val_pair_loader, device, contrastive
         )
 
-        cls_acc = validate_classification(
+        cc_acc, mlo_acc = validate_single_classification(
             model, val_cls_loader, device
         )
 
         print("\n------------------------------")
         print(f"Epoch {epoch}/{epochs}")
-        print(f"Train Loss       : {train_loss:.4f}")
-        print(f"Match Val Loss   : {val_match_loss:.4f}")
-        print(f"Match Accuracy   : {match_acc:.4f}")
-        print(f"Class Accuracy   : {cls_acc:.4f}")
+        print(f"Train Loss      : {train_loss:.4f}")
+        print(f"Match Val Loss  : {val_match_loss:.4f}")
+        print(f"Match Accuracy  : {match_acc:.4f}")
+        print(f"CC  Accuracy    : {cc_acc:.4f}")
+        print(f"MLO Accuracy    : {mlo_acc:.4f}")
         print("------------------------------\n")
 
-        # Save best
-        if val_match_loss < best_val:
-            best_val = val_match_loss
-            torch.save(model.state_dict(), os.path.join(save_dir, "best_model.pth"))
+        # Save best model
+        if val_match_loss < best_val_loss:
+            best_val_loss = val_match_loss
+            torch.save(model.state_dict(),
+                       os.path.join(save_dir, "best_model.pth"))
             print("✔ Saved best_model.pth")
 
         torch.save(model.state_dict(),
