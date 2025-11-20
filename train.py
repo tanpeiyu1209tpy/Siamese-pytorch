@@ -18,7 +18,7 @@ from utils.dataloader import SiameseDataset, siamese_collate
 # Contrastive Loss
 # ------------------------------------------------------
 class ContrastiveLoss(nn.Module):
-    def __init__(self, margin=5.0):
+    def __init__(self, margin=1.5):
         super().__init__()
         self.margin = margin
 
