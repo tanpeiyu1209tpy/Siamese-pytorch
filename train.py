@@ -158,8 +158,8 @@ if __name__ == "__main__":
     # C) Dataset & Loader
     # ==================================================
     print("\n[INFO] Loading dataset...")
-    train_dataset = SiameseDataset(train_dir, input_size, is_train=True)
-    val_dataset   = SiameseDataset(val_dir, input_size, is_train=False)
+    train_dataset = SiameseDataset(train_dir, input_size)
+    val_dataset   = SiameseDataset(val_dir, input_size)
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
