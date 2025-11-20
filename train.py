@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from nets.cmcnet import CMCNet
-from utils.dataloader import SiamesePatchDataset, siamese_collate
+from utils.dataloader import SiameseDataset, siamese_collate
 
 
 # ------------------------------------------------------
