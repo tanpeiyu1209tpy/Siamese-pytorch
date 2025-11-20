@@ -142,7 +142,7 @@ if __name__ == "__main__":
     num_classes = 3  # Mass / Calc / Negative
 
     epochs = 50
-    batch_size = 32
+    batch_size = 4
     lr = 1e-4
     margin = 5
 
