@@ -42,7 +42,7 @@ if __name__ == "__main__":
     val_dataset_path= "./siamese_data_val"
 
     input_shape     = [64, 64]
-    num_classes     = 4 # 0,1,2=lesions, 3=not-lesion
+    num_classes     = 3 # 0,1,2=lesions, 3=not-lesion
     pretrained      = True
     model_path      = ""
     Init_Epoch      = 0
