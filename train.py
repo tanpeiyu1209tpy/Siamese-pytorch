@@ -1,6 +1,6 @@
 # ==========================================================
-# train_cmcnet.py — Compatible with your new dataloader.py
-# (Joint Training: Matching + CC Classification + MLO Classification)
+# train_cmcnet.py — Final Clean Version (Correct CMCNet Training)
+# Multi-task: Matching + CC Classification + MLO Classification
 # ==========================================================
 
 import os
@@ -15,7 +15,7 @@ from utils.dataloader import SiameseDataset, siamese_collate
 
 
 # ------------------------------------------------------
-# Contrastive Loss
+# Contrastive Loss (Correct Version)
 # ------------------------------------------------------
 class ContrastiveLoss(nn.Module):
     def __init__(self, margin=1.5):
@@ -24,7 +24,7 @@ class ContrastiveLoss(nn.Module):
 
     def forward(self, dist, label):
         label = label.float()
-        pos_loss = label * dist.pow(2)                    # match = 1
+        pos_loss = label * dist.pow(2)
         neg_loss = (1 - label) * torch.clamp(self.margin - dist, min=0).pow(2)
         return torch.mean(pos_loss + neg_loss)
 
@@ -49,9 +49,10 @@ def train_one_epoch(model, loader, optimizer, device,
 
         optimizer.zero_grad()
 
-        # Forward
+        # Forward pass
         dist, cc_logits, mlo_logits = model((cc, mlo))
 
+        # Losses
         loss_m = contrastive_loss(dist, match_label)
         loss_cc = ce_loss(cc_logits, cc_label)
         loss_mlo = ce_loss(mlo_logits, mlo_label)
@@ -60,6 +61,7 @@ def train_one_epoch(model, loader, optimizer, device,
                 weights["alpha"] * loss_cc +
                 weights["beta"] * loss_mlo)
 
+        # Backprop
         loss.backward()
         optimizer.step()
 
@@ -75,22 +77,21 @@ def train_one_epoch(model, loader, optimizer, device,
 
 
 # ------------------------------------------------------
-# Validation — Full Multi-task (matching + 2-way classification)
+# Validation Function
 # ------------------------------------------------------
 def validate_joint(model, loader, device,
                    contrastive_loss, ce_loss, weights,
-                   margin=5):
+                   margin):
 
     model.eval()
 
     total_loss = 0
     match_correct = 0
     total_samples = 0
-
     cc_correct = 0
     mlo_correct = 0
 
-    threshold = margin / 2.0
+    threshold = margin / 2.0   # matching 判定阈值
 
     with torch.no_grad():
         for (cc, mlo), (match_label, cc_label, mlo_label) in loader:
@@ -111,11 +112,11 @@ def validate_joint(model, loader, device,
                     weights["beta"] * loss_mlo)
             total_loss += loss.item()
 
-            # Accuracy: Matching
+            # Matching accuracy
             pred_match = (dist < threshold).long()
             match_correct += (pred_match == match_label).sum().item()
 
-            # Accuracy: CC classification
+            # Classification accuracy
             cc_pred = torch.argmax(cc_logits, dim=1)
             mlo_pred = torch.argmax(mlo_logits, dim=1)
 
@@ -145,7 +146,7 @@ if __name__ == "__main__":
     epochs = 50
     batch_size = 4
     lr = 1e-4
-    margin = 5
+    margin = 1.5   # ✔ use consistent margin everywhere
 
     save_dir = "cmcnet_logs"
     os.makedirs(save_dir, exist_ok=True)
@@ -154,7 +155,7 @@ if __name__ == "__main__":
 
     print("\n[INFO] Loading dataset...")
 
-    # Use your dataloader exactly as you wrote it
+    # NEW DATASET (CMCNet version)
     train_dataset = SiameseDataset(train_dir, input_size, random_flag=True)
     val_dataset   = SiameseDataset(val_dir, input_size, random_flag=False)
 
@@ -179,6 +180,7 @@ if __name__ == "__main__":
     model = CMCNet(input_channels=3, num_classes=num_classes, pretrained=True)
     model.to(device)
 
+    # Loss functions
     ce_loss = nn.CrossEntropyLoss()
     contrastive = ContrastiveLoss(margin)
 
@@ -188,7 +190,7 @@ if __name__ == "__main__":
     best_val = 1e9
 
     # --------------------------------------------------
-    # Training
+    # Training Loop
     # --------------------------------------------------
     for epoch in range(1, epochs + 1):
 
@@ -200,7 +202,8 @@ if __name__ == "__main__":
 
         val_loss, match_acc, cc_acc, mlo_acc = validate_joint(
             model, val_loader, device,
-            contrastive, ce_loss, weights
+            contrastive, ce_loss, weights,
+            margin=margin
         )
 
         print("\n------------------------------")
@@ -212,6 +215,7 @@ if __name__ == "__main__":
         print(f"MLO Accuracy    : {mlo_acc:.4f}")
         print("------------------------------\n")
 
+        # Save best model
         if val_loss < best_val:
             best_val = val_loss
             torch.save(model.state_dict(), os.path.join(save_dir, "best_model.pth"))
