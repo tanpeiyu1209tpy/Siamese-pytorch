@@ -1,6 +1,6 @@
 # ==========================================================
-# train_cmcnet.py — Paper-Consistent Final Training Script
-# (Joint Matching + CC/MLO Classification Validation)
+# train_cmcnet.py — Compatible with your new dataloader.py
+# (Joint Training: Matching + CC Classification + MLO Classification)
 # ==========================================================
 
 import os
@@ -11,26 +11,26 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from nets.cmcnet import CMCNet
-from utils.dataloader import SiameseDataset, siamese_collate, SingleImageDataset
+from utils.dataloader import SiameseDataset, siamese_collate
 
 
 # ------------------------------------------------------
-# Contrastive Loss (Eq.1 in the paper)
+# Contrastive Loss
 # ------------------------------------------------------
 class ContrastiveLoss(nn.Module):
     def __init__(self, margin=5.0):
         super().__init__()
         self.margin = margin
 
-    def forward(self, distance, label):
+    def forward(self, dist, label):
         label = label.float()
-        pos_loss = label * distance.pow(2)
-        neg_loss = (1 - label) * torch.clamp(self.margin - distance, min=0).pow(2)
+        pos_loss = label * dist.pow(2)                    # match = 1
+        neg_loss = (1 - label) * torch.clamp(self.margin - dist, min=0).pow(2)
         return torch.mean(pos_loss + neg_loss)
 
 
 # ------------------------------------------------------
-# Train One Epoch (multi-task)
+# Train One Epoch
 # ------------------------------------------------------
 def train_one_epoch(model, loader, optimizer, device,
                     contrastive_loss, ce_loss, weights,
@@ -38,7 +38,6 @@ def train_one_epoch(model, loader, optimizer, device,
 
     model.train()
     pbar = tqdm(loader, desc=f"Epoch {epoch}/{total_epoch} [Train]")
-
     total_loss = 0
 
     for (cc, mlo), (match_label, cc_label, mlo_label) in pbar:
@@ -50,6 +49,7 @@ def train_one_epoch(model, loader, optimizer, device,
 
         optimizer.zero_grad()
 
+        # Forward
         dist, cc_logits, mlo_logits = model((cc, mlo))
 
         loss_m = contrastive_loss(dist, match_label)
@@ -75,7 +75,7 @@ def train_one_epoch(model, loader, optimizer, device,
 
 
 # ------------------------------------------------------
-# Validation — Complete Multi-task Validation (Paper)
+# Validation — Full Multi-task (matching + 2-way classification)
 # ------------------------------------------------------
 def validate_joint(model, loader, device,
                    contrastive_loss, ce_loss, weights,
@@ -85,11 +85,12 @@ def validate_joint(model, loader, device,
 
     total_loss = 0
     match_correct = 0
+    total_samples = 0
+
     cc_correct = 0
     mlo_correct = 0
-    total = 0
 
-    threshold = margin / 2
+    threshold = margin / 2.0
 
     with torch.no_grad():
         for (cc, mlo), (match_label, cc_label, mlo_label) in loader:
@@ -108,23 +109,26 @@ def validate_joint(model, loader, device,
             loss = (weights["gamma"] * loss_m +
                     weights["alpha"] * loss_cc +
                     weights["beta"] * loss_mlo)
-
             total_loss += loss.item()
 
-            # accuracies
-            match_pred = (dist < threshold).long()
-            match_correct += (match_pred == match_label).sum().item()
+            # Accuracy: Matching
+            pred_match = (dist < threshold).long()
+            match_correct += (pred_match == match_label).sum().item()
 
-            cc_correct += (torch.argmax(cc_logits, 1) == cc_label).sum().item()
-            mlo_correct += (torch.argmax(mlo_logits, 1) == mlo_label).sum().item()
+            # Accuracy: CC classification
+            cc_pred = torch.argmax(cc_logits, dim=1)
+            mlo_pred = torch.argmax(mlo_logits, dim=1)
 
-            total += cc.size(0)
+            cc_correct += (cc_pred == cc_label).sum().item()
+            mlo_correct += (mlo_pred == mlo_label).sum().item()
+
+            total_samples += cc.size(0)
 
     return (
         total_loss / len(loader),
-        match_correct / total,
-        cc_correct / total,
-        mlo_correct / total
+        match_correct / total_samples,
+        cc_correct / total_samples,
+        mlo_correct / total_samples
     )
 
 
@@ -148,19 +152,27 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Datasets
     print("\n[INFO] Loading dataset...")
 
+    # Use your dataloader exactly as you wrote it
     train_dataset = SiameseDataset(train_dir, input_size, random_flag=True)
     val_dataset   = SiameseDataset(val_dir, input_size, random_flag=False)
 
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True,
-        num_workers=4, collate_fn=siamese_collate, drop_last=True
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        collate_fn=siamese_collate,
+        drop_last=True
     )
+
     val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=4, collate_fn=siamese_collate
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=4,
+        collate_fn=siamese_collate
     )
 
     # Model
@@ -170,12 +182,14 @@ if __name__ == "__main__":
     ce_loss = nn.CrossEntropyLoss()
     contrastive = ContrastiveLoss(margin)
 
-    weights = {"alpha":1.0, "beta":1.0, "gamma":1.0}
+    weights = {"alpha": 1.0, "beta": 1.0, "gamma": 1.0}
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     best_val = 1e9
 
-    # Training loop
+    # --------------------------------------------------
+    # Training
+    # --------------------------------------------------
     for epoch in range(1, epochs + 1):
 
         train_loss = train_one_epoch(
@@ -198,7 +212,6 @@ if __name__ == "__main__":
         print(f"MLO Accuracy    : {mlo_acc:.4f}")
         print("------------------------------\n")
 
-        # Save best model
         if val_loss < best_val:
             best_val = val_loss
             torch.save(model.state_dict(), os.path.join(save_dir, "best_model.pth"))
