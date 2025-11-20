@@ -185,9 +185,9 @@ if __name__ == "__main__":
 
     #pos_weight = max(1.0, ratio)
 
-    print(f"\n[INFO] Positive Samples: {pos_count}")
-    print(f"[INFO] Negative Samples: {neg_count}")
-    print(f"[INFO] Class Weight (pos): {pos_weight:.2f}")
+    #print(f"\n[INFO] Positive Samples: {pos_count}")
+    #print(f"[INFO] Negative Samples: {neg_count}")
+    #print(f"[INFO] Class Weight (pos): {pos_weight:.2f}")
 
     #ce_loss = nn.CrossEntropyLoss(
     #    weight=torch.tensor([pos_weight, pos_weight, 1.0], device=device)
