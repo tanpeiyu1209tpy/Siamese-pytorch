@@ -11,7 +11,8 @@ from torchvision import transforms
 # Parse filename: <pid>_<side>_<view>_(pos|neg)<idx>.png
 # ===============================================================
 def parse_filename(fname):
-    pattern = r"^(.*?)_([LR])_(CC|MLO)_(pos|neg)(\d+)\.png$"
+    pattern = r"^(.*?)_([LR])_(CC|MLO)_(pos|neg)_?(\d+)\.png$"
+
     m = re.match(pattern, fname)
     if m:
         return {
