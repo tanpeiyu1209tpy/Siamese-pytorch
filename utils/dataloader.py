@@ -202,8 +202,8 @@ def siamese_collate(batch):
 # SingleImageDataset（验证分类用）★ 关键修复
 # ===============================================================
 class SingleImageDataset(Dataset):
-    def __init__(self, root_dir, input_size=(64, 64)):
-        self.paths = []
+    def __init__(self, root_dir, input_size=(64,64)):
+        self.items = []
         self.input_size = input_size
         self.class_map = {"Mass": 0, "Calcification": 1, "Negative": 2}
 
@@ -216,13 +216,15 @@ class SingleImageDataset(Dataset):
 
             for fname in os.listdir(cls_dir):
                 if fname.lower().endswith((".png", ".jpg", ".jpeg")):
-                    self.paths.append((
-                        os.path.join(cls_dir, fname),
-                        cls_id
-                    ))
+                    full_path = os.path.join(cls_dir, fname)
 
-        if len(self.paths) == 0:
-            raise ValueError(f"❌ SingleImageDataset: no images found in {root_dir}")
+                    # 从档名判断 CC/MLO
+                    view = "CC" if "_CC_" in fname else "MLO"
+
+                    self.items.append((full_path, cls_id, view))
+
+        if len(self.items) == 0:
+            raise ValueError("No images found in SingleImageDataset!")
 
         self.to_tensor = transforms.Compose([
             transforms.Resize(input_size),
@@ -231,12 +233,14 @@ class SingleImageDataset(Dataset):
                                  [0.229,0.224,0.225])
         ])
 
-        print(f"[INFO] SingleImageDataset loaded {len(self.paths)} images from {root_dir}")
+        print(f"[INFO] SingleImageDataset loaded {len(self.items)} images from {root_dir}")
 
     def __len__(self):
-        return len(self.paths)
+        return len(self.items)
 
     def __getitem__(self, idx):
-        path, label = self.paths[idx]
+        path, label, view = self.items[idx]
         img = Image.open(path).convert("RGB")
-        return self.to_tensor(img), label
+        img = self.to_tensor(img)
+        return img, label, view
+
