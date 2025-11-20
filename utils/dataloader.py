@@ -29,6 +29,7 @@ def parse_filename(fname):
 # ===============================================================
 class SiameseDataset(Dataset):
     def __init__(self, root_dir, input_size=(64, 64), random_flag=True):
+        print("📌 Using NEW CMCNet SiameseDataset !!!")  # debug 标记
         self.root_dir = root_dir
         self.random_flag = random_flag
         self.input_size = input_size
@@ -72,12 +73,16 @@ class SiameseDataset(Dataset):
                 # ---------------------------
                 if parsed["view"] == "CC":
                     if is_positive:
-                        self.data[pid]["CC_pos"].append((fpath, self.class_map[cls_name]))
+                        self.data[pid]["CC_pos"].append(
+                            (fpath, self.class_map[cls_name])
+                        )
                     else:
                         self.data[pid]["CC_neg"].append((fpath, 2))
                 else:
                     if is_positive:
-                        self.data[pid]["MLO_pos"].append((fpath, self.class_map[cls_name]))
+                        self.data[pid]["MLO_pos"].append(
+                            (fpath, self.class_map[cls_name])
+                        )
                     else:
                         self.data[pid]["MLO_neg"].append((fpath, 2))
 
@@ -89,7 +94,7 @@ class SiameseDataset(Dataset):
             if len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0
         ]
 
-        print(f"Loaded {len(self.valid_ids)} valid patient-sides with CC+MLO.")
+        print(f"✔ Loaded {len(self.valid_ids)} valid patient-sides with CC+MLO.")
 
         # transform
         self.to_tensor = transforms.Compose([
@@ -107,35 +112,40 @@ class SiameseDataset(Dataset):
     # ======================================================
     def __getitem__(self, idx):
         pid = self.valid_ids[idx]
-
         v = self.data[pid]
 
-        # Positive patches
+        # -------------------------
+        # POSITIVE pair (same lesion = both positive)
+        # -------------------------
         cc_pos_path, cc_pos_cls = random.choice(v["CC_pos"])
         mlo_pos_path, mlo_pos_cls = random.choice(v["MLO_pos"])
 
-        # POSITIVE MATCH
         match_pos = 1.0
 
-        # CLASSIFICATION LABELS (patch-level)
+        # Patch-level classification labels
         cc_pos_lbl = cc_pos_cls
         mlo_pos_lbl = mlo_pos_cls
 
-        # Negative pools
-        cc_neg_pool = v["CC_neg"] + [p for p in v["CC_pos"]]
-        mlo_neg_pool = v["MLO_neg"] + [p for p in v["MLO_pos"]]
+        # -------------------------
+        # NEGATIVE pair (正 × 负 或 负 × 正)
+        # -------------------------
+        cc_neg_pool = v["CC_neg"] + v["CC_pos"]
+        mlo_neg_pool = v["MLO_neg"] + v["MLO_pos"]
 
-        # Negative pair = pos × neg  OR neg × pos
         if random.random() < 0.5:
+            # CC negative + MLO positive
             cc_neg_path, cc_neg_lbl = random.choice(cc_neg_pool)
             mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_pos"])
         else:
+            # CC positive + MLO negative
             cc_neg_path, cc_neg_lbl = random.choice(v["CC_pos"])
             mlo_neg_path, mlo_neg_lbl = random.choice(mlo_neg_pool)
 
         match_neg = 0.0
 
-        # Load images
+        # -------------------------
+        # load images
+        # -------------------------
         cc_imgs = [
             self.load_image(cc_pos_path),
             self.load_image(cc_neg_path)
