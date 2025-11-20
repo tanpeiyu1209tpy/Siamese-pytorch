@@ -179,20 +179,20 @@ if __name__ == "__main__":
     # ==================================================
     # E) Balanced Loss (class imbalance fix)
     # ==================================================
-    pos_count = train_dataset.total_positive
-    neg_count = train_dataset.total_negative
-    ratio = neg_count / max(pos_count, 1)
+    #pos_count = train_dataset.total_positive
+    #neg_count = train_dataset.total_negative
+    #ratio = neg_count / max(pos_count, 1)
 
-    pos_weight = max(1.0, ratio)
+    #pos_weight = max(1.0, ratio)
 
     print(f"\n[INFO] Positive Samples: {pos_count}")
     print(f"[INFO] Negative Samples: {neg_count}")
     print(f"[INFO] Class Weight (pos): {pos_weight:.2f}")
 
-    ce_loss = nn.CrossEntropyLoss(
-        weight=torch.tensor([pos_weight, pos_weight, 1.0], device=device)
-    )
-
+    #ce_loss = nn.CrossEntropyLoss(
+    #    weight=torch.tensor([pos_weight, pos_weight, 1.0], device=device)
+    #)
+    ce_loss = nn.CrossEntropyLoss()
     # ==================================================
     # F) Optimizer & weighted multi-loss
     # ==================================================
