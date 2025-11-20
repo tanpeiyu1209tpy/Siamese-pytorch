@@ -8,7 +8,7 @@ from torchvision import transforms
 
 
 # ===============================================================
-# 解析档名： <patient>_<side>_<view>_(pos/neg)<idx>.png
+# Parse filename: <patient>_<side>_<view>_(pos|neg)<idx>.png
 # ===============================================================
 def parse_filename(fname):
     pattern = r"^(.*?)_([LR])_(CC|MLO)_(pos|neg)(\d+)\.png$"
@@ -18,31 +18,31 @@ def parse_filename(fname):
             "patient_id": m.group(1),
             "side": m.group(2),
             "view": m.group(3),
-            "patch_type": m.group(4),
+            "patch_type": m.group(4),   # pos / neg
             "idx": int(m.group(5))
         }
     return None
 
 
 # ===============================================================
-# Siamese Dataset（完全修复）
+# SiameseDataset — FINAL FIXED VERSION
 # ===============================================================
 class SiameseDataset(Dataset):
-    def __init__(self, root_dir, input_size=(64, 64), random_flag=True):
+    def __init__(self, root_dir, input_size=(64,64), random_flag=True):
         self.root_dir = root_dir
         self.random_flag = random_flag
         self.input_size = input_size
 
-        # Only Mass / Calcification are real positive classes
+        # ❗ class_map 只用于 POSITIVE 类别
         self.class_map = {"Mass": 0, "Calcification": 1}
-        NEG_CLASS = 2
 
-        # patient → 正样本类别
-        patient_cls_map = {}
+        # Patient data container
+        self.data = {}   # patient → {CC:[], MLO:[], cls:0/1, neg_CC:[], neg_MLO:[]}
+        self.cls_to_patient = {0: [], 1: []}
 
-        # ----------------------------------------------------
-        # Step 1: Collect positive classes (Mass / Calcification)
-        # ----------------------------------------------------
+        # ======================================================
+        # Step 1 — 先读 Mass & Calcification（决定病人真实类别）
+        # ======================================================
         for cls_name in ["Mass", "Calcification"]:
             cls_dir = os.path.join(root_dir, cls_name)
             if not os.path.exists(cls_dir):
@@ -56,91 +56,107 @@ class SiameseDataset(Dataset):
                     continue
 
                 pid = f"{parsed['patient_id']}_{parsed['side']}"
-                patient_cls_map[pid] = cls_id   # 正确 patient-level class
 
-        # ----------------------------------------------------
-        # Step 2: Load ALL patches (Mass/Calcification/Negative)
-        # ----------------------------------------------------
-        self.data = {}
+                # 初始化 patient 结构
+                if pid not in self.data:
+                    self.data[pid] = {
+                        "CC": [], "MLO": [],
+                        "neg_CC": [], "neg_MLO": [],
+                        "cls": cls_id
+                    }
 
-        for cls_name in ["Mass", "Calcification", "Negative"]:
-            cls_dir = os.path.join(root_dir, cls_name)
-            if not os.path.exists(cls_dir):
-                continue
+                fpath = os.path.join(cls_dir, fname)
+                self.data[pid][parsed["view"]].append({
+                    "path": fpath,
+                    "cls": cls_id,
+                    "patch_type": "pos"
+                })
 
-            for fname in os.listdir(cls_dir):
+        # ======================================================
+        # Step 2 — 再读 Negative folder（不改变病人 class）
+        # ======================================================
+        neg_dir = os.path.join(root_dir, "Negative")
+        if os.path.exists(neg_dir):
+            for fname in os.listdir(neg_dir):
                 parsed = parse_filename(fname)
                 if parsed is None:
                     continue
 
                 pid = f"{parsed['patient_id']}_{parsed['side']}"
+
+                # 如果此病人根本不是 Mass/Calc → 丢掉
                 if pid not in self.data:
-                    self.data[pid] = {"CC": [], "MLO": [], "cls": None}
+                    continue
 
-                fpath = os.path.join(cls_dir, fname)
+                fpath = os.path.join(neg_dir, fname)
 
-                self.data[pid][parsed["view"]].append({
-                    "path": fpath,
-                    "patch_type": parsed["patch_type"],
-                    "folder": cls_name
-                })
+                if parsed["view"] == "CC":
+                    self.data[pid]["neg_CC"].append(fpath)
+                else:
+                    self.data[pid]["neg_MLO"].append(fpath)
 
-        # ----------------------------------------------------
-        # Step 3: Assign patient class ONLY from positive patches
-        # ----------------------------------------------------
-        self.valid_ids = []
-        for pid, entry in self.data.items():
-            if pid not in patient_cls_map:
-                continue   # skip purely negative patients
+        # ======================================================
+        # Step 3 — 保留有 CC 和 MLO 的病人
+        # ======================================================
+        self.valid_ids = [
+            pid for pid, v in self.data.items()
+            if len(v["CC"]) > 0 and len(v["MLO"]) > 0
+        ]
 
-            if len(entry["CC"]) == 0 or len(entry["MLO"]) == 0:
-                continue   # need both CC + MLO
-
-            entry["cls"] = patient_cls_map[pid]
-            self.valid_ids.append(pid)
-
-        if len(self.valid_ids) == 0:
-            raise ValueError("❌ No valid CC+MLO patients with positive class found!")
+        for pid in self.valid_ids:
+            self.cls_to_patient[self.data[pid]["cls"]].append(pid)
 
         print(f"Loaded {len(self.valid_ids)} valid patient-sides with CC+MLO.")
 
-        # group patients by positive class
-        self.cls_to_patient = {0: [], 1: []}
-        for pid in self.valid_ids:
-            cls_id = self.data[pid]["cls"]
-            self.cls_to_patient[cls_id].append(pid)
-
+        # transform
         self.to_tensor = transforms.Compose([
             transforms.Resize(input_size),
             transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406],
-                                 [0.229, 0.224, 0.225])
+            transforms.Normalize([0.485,0.456,0.406],
+                                 [0.229,0.224,0.225])
         ])
 
     def __len__(self):
         return len(self.valid_ids)
 
-    # --------------------------------------------------------------
-    # Produce Positive pair + Negative pair
-    # --------------------------------------------------------------
+    # ======================================================
+    # Produce: Positive pair + Negative pair
+    # ======================================================
     def __getitem__(self, idx):
         pid = self.valid_ids[idx]
         cls_id = self.data[pid]["cls"]
 
-        cc_list = self.data[pid]["CC"]
-        mlo_list = self.data[pid]["MLO"]
+        CC_pos_list = self.data[pid]["CC"]
+        MLO_pos_list = self.data[pid]["MLO"]
 
+        # -------------------------
         # Positive pair
-        cc_pos = random.choice(cc_list)
-        mlo_pos = random.choice(mlo_list)
+        # -------------------------
+        cc_pos = random.choice(CC_pos_list)
+        mlo_pos = random.choice(MLO_pos_list)
+        match_pos = 1.0
 
-        # Negative pair (same class, different patient)
+        # -------------------------
+        # Negative pair — same class, different patient
+        # -------------------------
         candidates = [p for p in self.cls_to_patient[cls_id] if p != pid]
         neg_pid = random.choice(candidates)
 
-        cc_neg = random.choice(self.data[neg_pid]["CC"])
-        mlo_neg = random.choice(self.data[neg_pid]["MLO"])
+        # 从对方病人抽 CC/MLO
+        cc_neg_candidates = self.data[neg_pid]["CC"] + \
+                            [{"path": n, "cls": cls_id} for n in self.data[neg_pid]["neg_CC"]]
 
+        mlo_neg_candidates = self.data[neg_pid]["MLO"] + \
+                             [{"path": n, "cls": cls_id} for n in self.data[neg_pid]["neg_MLO"]]
+
+        cc_neg = random.choice(cc_neg_candidates)
+        mlo_neg = random.choice(mlo_neg_candidates)
+
+        match_neg = 0.0
+
+        # -------------------------
+        # Load images
+        # -------------------------
         cc_imgs = [
             self.load_image(cc_pos["path"]),
             self.load_image(cc_neg["path"])
@@ -150,38 +166,42 @@ class SiameseDataset(Dataset):
             self.load_image(mlo_neg["path"])
         ]
 
-        match_labels = torch.tensor([1.0, 0.0])
-        cc_labels = torch.tensor([cls_id, cls_id])
-        mlo_labels = torch.tensor([cls_id, cls_id])
+        match_labels = torch.tensor([match_pos, match_neg])
+        cc_cls = torch.tensor([cls_id, cls_id])
+        mlo_cls = torch.tensor([cls_id, cls_id])
 
-        return (torch.stack(cc_imgs), torch.stack(mlo_imgs)), (
-            match_labels, cc_labels, mlo_labels
+        return (
+            torch.stack(cc_imgs),
+            torch.stack(mlo_imgs)
+        ), (
+            match_labels.float(),
+            cc_cls.long(),
+            mlo_cls.long()
         )
 
     def load_image(self, path):
-        img = Image.open(path).convert("RGB")
-        return self.to_tensor(img)
+        return self.to_tensor(Image.open(path).convert("RGB"))
 
 
 # ===============================================================
-# Collate
+# collate_fn
 # ===============================================================
 def siamese_collate(batch):
-    cc_imgs = []
-    mlo_imgs = []
-    match_labels = []
-    cc_labels = []
-    mlo_labels = []
+    cc_imgs, mlo_imgs = [], []
+    m_labels, cc_labels, mlo_labels = [], [], []
 
-    for (cc, mlo), (m, c1, c2) in batch:
+    for (cc, mlo), (m, cc_c, mlo_c) in batch:
         cc_imgs.append(cc)
         mlo_imgs.append(mlo)
-        match_labels.append(m)
-        cc_labels.append(c1)
-        mlo_labels.append(c2)
+        m_labels.append(m)
+        cc_labels.append(cc_c)
+        mlo_labels.append(mlo_c)
 
-    return (torch.cat(cc_imgs, 0), torch.cat(mlo_imgs, 0)), (
-        torch.cat(match_labels),
+    return (
+        torch.cat(cc_imgs),
+        torch.cat(mlo_imgs)
+    ), (
+        torch.cat(m_labels),
         torch.cat(cc_labels),
         torch.cat(mlo_labels)
     )
