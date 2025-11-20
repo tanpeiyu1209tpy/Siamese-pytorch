@@ -12,7 +12,7 @@ class CMCNet(nn.Module):
     论文: Yan et al., "Multi-tasking Siamese Networks for Breast Mass Detection
           Using Dual-View Mammogram Matching", MLMI 2020.
     """
-    def __init__(self, input_channels=3, num_classes=4, pretrained=True):
+    def __init__(self, input_channels=3, num_classes=3, pretrained=True):
         super(CMCNet, self).__init__()
 
         # 1. VGG16 Backbone -------------------------------------------
