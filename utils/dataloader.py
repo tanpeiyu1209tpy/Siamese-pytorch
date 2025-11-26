@@ -93,20 +93,32 @@ class SiameseDataset(Dataset):
         print(f"✔ Loaded {len(self.valid_ids)} valid patient-sides with CC+MLO.")
 
         #self.to_tensor = transforms.Compose([
-        #    transforms.Resize(input_size),
+        #    transforms.RandomRotation(25),           # 随机旋转 25 度
+        #    transforms.RandomHorizontalFlip(),       # 随机水平翻转
+        #    transforms.RandomResizedCrop(input_size),# 随机裁剪/缩放
         #    transforms.ToTensor(),
         #    transforms.Normalize([0.485, 0.456, 0.406],
         #                         [0.229, 0.224, 0.225])
         #])
 
-        self.to_tensor = transforms.Compose([
-            transforms.RandomRotation(25),           # 随机旋转 25 度
-            transforms.RandomHorizontalFlip(),       # 随机水平翻转
-            transforms.RandomResizedCrop(input_size),# 随机裁剪/缩放
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406],
-                                 [0.229, 0.224, 0.225])
-        ])
+        if self.random_flag:
+            # 训练集：随机增强
+            self.to_tensor = transforms.Compose([
+                # ⚠️ 确保在随机操作前有一个Resize，如果 RandomResizedCrop 不足以统一尺寸。
+                # 但既然使用了 RandomResizedCrop，可以假设它会处理尺寸。
+                transforms.RandomRotation(25),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomResizedCrop(input_size), # 目标尺寸 64x64
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+            ])
+        else:
+            # 验证集/测试集：仅缩放和归一化 (使用 Resize, 而非随机裁剪)
+            self.to_tensor = transforms.Compose([
+                transforms.Resize(input_size), # 统一尺寸到 64x64
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+            ])
 
     def __len__(self):
         return len(self.valid_ids)
