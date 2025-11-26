@@ -43,6 +43,15 @@ class CMCNet(nn.Module):
             nn.Linear(512, num_classes)
         )
 
+        # 3. Metric Head (用于匹配任务的特征映射) -----------------------
+        # Metric Network 如图3-B所示，在匹配任务中用于学习特征空间的映射
+        self.metric_head = nn.Sequential(
+            nn.Linear(flat_dim, 512),
+            nn.ReLU(inplace=True),
+            # 最后一个线性层将特征映射回特征空间（可选降维）
+            nn.Linear(512, flat_dim) 
+        )
+
     def forward(self, x):
         """
         Args:
@@ -61,15 +70,40 @@ class CMCNet(nn.Module):
         f2 = self.features(img_mlo)
         f1 = self.avgpool(f1)
         f2 = self.avgpool(f2)
-        f1 = torch.flatten(f1, 1)
-        f2 = torch.flatten(f2, 1)
+        #f1 = torch.flatten(f1, 1)
+        #f2 = torch.flatten(f2, 1)
 
         # --- L2 Distance for contrastive loss ---
-        distance = torch.norm(f1 - f2, p=2, dim=1)
+        #distance = torch.norm(f1 - f2, p=2, dim=1)
 
         # --- Classification branches ---
+        #logits_cc = self.cls_head_cc(f1)
+        #logits_mlo = self.cls_head_mlo(f2)
+
+
+
+        f1 = torch.flatten(f1, 1) # (B, 512)
+        f2 = torch.flatten(f2, 1) # (B, 512)
+
+        # --- Classification branches (使用原始特征) ---
         logits_cc = self.cls_head_cc(f1)
         logits_mlo = self.cls_head_mlo(f2)
+        
+        # --- L2 Distance for contrastive loss (使用 Metric Network 映射后的特征) ---
+        # 映射特征
+        f1_mapped = self.metric_head(f1)
+        f2_mapped = self.metric_head(f2)
+        
+        # 计算距离
+        distance = torch.norm(f1_mapped - f2_mapped, p=2, dim=1) 
+
+        # --- Classification branches (保持不变) ---
+        # logits_cc = self.cls_head_cc(f1) # <-- 现在放在 distance 计算前了
+        # logits_mlo = self.cls_head_mlo(f2) # <-- 现在放在 distance 计算前了
+
+        return distance, logits_cc, logits_mlo
+
+        
 
         return distance, logits_cc, logits_mlo
 
