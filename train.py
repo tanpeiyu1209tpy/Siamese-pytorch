@@ -18,7 +18,7 @@ from utils.dataloader import SiameseDataset, siamese_collate
 # Contrastive Loss (Correct Version)
 # ------------------------------------------------------
 class ContrastiveLoss(nn.Module):
-    def __init__(self, margin=15.0):
+    def __init__(self, margin=10.0):
         super().__init__()
         self.margin = margin
 
@@ -63,6 +63,7 @@ def train_one_epoch(model, loader, optimizer, device,
 
         # Backprop
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
 
         total_loss += loss.item()
