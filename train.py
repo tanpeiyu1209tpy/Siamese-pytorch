@@ -184,7 +184,7 @@ if __name__ == "__main__":
     ce_loss = nn.CrossEntropyLoss()
     contrastive = ContrastiveLoss(margin)
 
-    weights = {"alpha": 1.0, "beta": 1.0, "gamma": 1.0}
+    weights = {"alpha": 0.8, "beta": 0.8, "gamma": 1.2}
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     best_val = 1e9
