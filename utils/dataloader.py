@@ -79,10 +79,15 @@ class SiameseDataset(Dataset):
         # -------------------------------------------------
         # VALID IDs: now supports Negative patients
         # -------------------------------------------------
+        #self.valid_ids = [
+        #    pid for pid, v in self.data.items()
+        #    if (len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0) or
+        #       (len(v["CC_neg"]) > 0 and len(v["MLO_neg"]) > 0)
+        #]
+
         self.valid_ids = [
             pid for pid, v in self.data.items()
-            if (len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0) or
-               (len(v["CC_neg"]) > 0 and len(v["MLO_neg"]) > 0)
+            if len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0 
         ]
 
         print(f"✔ Loaded {len(self.valid_ids)} valid patient-sides with CC+MLO.")
