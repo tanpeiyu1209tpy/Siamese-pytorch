@@ -87,8 +87,17 @@ class SiameseDataset(Dataset):
 
         print(f"✔ Loaded {len(self.valid_ids)} valid patient-sides with CC+MLO.")
 
+        #self.to_tensor = transforms.Compose([
+        #    transforms.Resize(input_size),
+        #    transforms.ToTensor(),
+        #    transforms.Normalize([0.485, 0.456, 0.406],
+        #                         [0.229, 0.224, 0.225])
+        #])
+
         self.to_tensor = transforms.Compose([
-            transforms.Resize(input_size),
+            transforms.RandomRotation(25),           # 随机旋转 25 度
+            transforms.RandomHorizontalFlip(),       # 随机水平翻转
+            transforms.RandomResizedCrop(input_size),# 随机裁剪/缩放
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406],
                                  [0.229, 0.224, 0.225])
