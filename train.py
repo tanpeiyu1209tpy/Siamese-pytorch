@@ -18,7 +18,7 @@ from utils.dataloader import SiameseDataset, siamese_collate
 # Contrastive Loss (Correct Version)
 # ------------------------------------------------------
 class ContrastiveLoss(nn.Module):
-    def __init__(self, margin=1.5):
+    def __init__(self, margin=15.0):
         super().__init__()
         self.margin = margin
 
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     epochs = 50
     batch_size = 4
     lr = 1e-4
-    margin = 1.5   # ✔ use consistent margin everywhere
+    margin = 15.0   # ✔ use consistent margin everywhere
 
     save_dir = "cmcnet_logs"
     os.makedirs(save_dir, exist_ok=True)
@@ -184,7 +184,7 @@ if __name__ == "__main__":
     ce_loss = nn.CrossEntropyLoss()
     contrastive = ContrastiveLoss(margin)
 
-    weights = {"alpha": 0.8, "beta": 0.8, "gamma": 1.2}
+    weights = {"alpha": 1.0, "beta": 1.0, "gamma": 0.1}
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     best_val = 1e9
