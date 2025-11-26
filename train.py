@@ -154,6 +154,19 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    
+
+    # --- 1. 计算分类权重 (用于加权交叉熵) ---
+    # 假设的类别数量：Mass: 2610, Calcification: 570, Negative: 3180
+    class_counts = torch.tensor([2610.0, 570.0, 3180.0]) 
+    total_samples = class_counts.sum()
+
+    # 计算类别权重 (Inverse Frequency Weighting: 样本数越少，权重越高)
+    class_weights = total_samples / (len(class_counts) * class_counts)
+    class_weights = class_weights.to(device)
+
+
+    
     print("\n[INFO] Loading dataset...")
 
     # NEW DATASET (CMCNet version)
@@ -182,8 +195,11 @@ if __name__ == "__main__":
     model.to(device)
 
     # Loss functions
-    ce_loss = nn.CrossEntropyLoss()
+    ce_loss = nn.CrossEntropyLoss(weight=class_weights) # 使用加权交叉熵
     contrastive = ContrastiveLoss(margin)
+    
+    #ce_loss = nn.CrossEntropyLoss()
+    #contrastive = ContrastiveLoss(margin)
 
     weights = {"alpha": 1.0, "beta": 1.0, "gamma": 0.1}
     #optimizer = optim.Adam(model.parameters(), lr=lr)
