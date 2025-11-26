@@ -144,7 +144,7 @@ if __name__ == "__main__":
 
     input_size = (64, 64)
     num_classes = 3
-    epochs = 50
+    epochs = 100
     batch_size = 4
     lr = 0.0005
     margin = 15.0   # ✔ use consistent margin everywhere
