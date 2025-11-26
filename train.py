@@ -145,7 +145,7 @@ if __name__ == "__main__":
     num_classes = 3
     epochs = 50
     batch_size = 4
-    lr = 1e-4
+    lr = 0.0005
     margin = 15.0   # ✔ use consistent margin everywhere
 
     save_dir = "cmcnet_logs"
@@ -185,7 +185,8 @@ if __name__ == "__main__":
     contrastive = ContrastiveLoss(margin)
 
     weights = {"alpha": 1.0, "beta": 1.0, "gamma": 0.1}
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    #optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
 
     best_val = 1e9
 
