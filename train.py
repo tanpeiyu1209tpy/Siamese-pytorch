@@ -276,7 +276,7 @@ if __name__ == "__main__":
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=batch_size,
+        batch_size=1,
         shuffle=False,
         num_workers=4,
         collate_fn=siamese_collate
