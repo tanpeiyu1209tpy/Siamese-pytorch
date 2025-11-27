@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 
 from nets.cmcnet import CMCNet
 from utils.dataloader_new import SiameseDataset, siamese_collate,SiameseDatasetVal, val_collate
+from torch.optim.lr_scheduler import StepLR
 
 
 # ------------------------------------------------------
@@ -297,6 +298,8 @@ if __name__ == "__main__":
     #optimizer = optim.Adam(model.parameters(), lr=lr)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
 
+    scheduler = StepLR(optimizer, step_size=40, gamma=0.1)
+
     best_val = 1e9
 
     history = {
@@ -347,3 +350,5 @@ if __name__ == "__main__":
 
         torch.save(model.state_dict(), os.path.join(save_dir, f"epoch_{epoch}.pth"))
         plot_history(history, save_dir)
+        scheduler.step()
+        print(f"[LR] Current learning rate: {scheduler.get_last_lr()[0]}")
