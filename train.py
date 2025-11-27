@@ -378,4 +378,4 @@ if __name__ == "__main__":
         torch.save(model.state_dict(), os.path.join(save_dir, f"epoch_{epoch}.pth"))
         plot_history(history, save_dir)
         #scheduler.step()
-        print(f"[LR] Current learning rate: {scheduler.get_last_lr()[0]}")
+        #print(f"[LR] Current learning rate: {scheduler.get_last_lr()[0]}")
