@@ -11,8 +11,7 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
-
-def run_full_inference(model_path, cc_dir, mlo_dir, threshold=4.0):
+def run_full_inference(model_path, cc_dir, mlo_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print("🔍 Loading CMCNet model...")
@@ -32,9 +31,7 @@ def run_full_inference(model_path, cc_dir, mlo_dir, threshold=4.0):
         cc_patches = sorted(os.listdir(os.path.join(cc_dir, p)))
         mlo_patches = sorted(os.listdir(os.path.join(mlo_dir, p)))
 
-        best_pair = None
-        best_dist = 999
-
+        # ⭐ 保留所有 positive patch
         for cc_f in cc_patches:
             cc_img = cv2.imread(os.path.join(cc_dir, p, cc_f))
             cc_tensor = transform(cc_img).unsqueeze(0).to(device)
@@ -46,50 +43,33 @@ def run_full_inference(model_path, cc_dir, mlo_dir, threshold=4.0):
                 with torch.no_grad():
                     dist, cc_logits, mlo_logits = model((cc_tensor, mlo_tensor))
 
-                dist = dist.item()
                 cc_pred = torch.argmax(cc_logits, dim=1).item()
                 mlo_pred = torch.argmax(mlo_logits, dim=1).item()
-                
-                if cc_pred == 2 or mlo_pred == 2:
-                    continue
 
-                if dist < best_dist:
-                    best_dist = dist
-                    best_pair = (cc_f, mlo_f, dist, cc_pred, mlo_pred)
-
-        rows.append({
-            "patient": p,
-            "CC_patch": best_pair[0],
-            "MLO_patch": best_pair[1],
-            "distance": best_pair[2],
-            "cc_pred_class": best_pair[3],
-            "mlo_pred_class": best_pair[4]
-        })
+                # ⭐ 保留 positive（0:mass,1:cal）
+                if cc_pred in (0,1) or mlo_pred in (0,1):
+                    rows.append({
+                        "patient": p,
+                        "CC_patch": cc_f,
+                        "MLO_patch": mlo_f,
+                        "distance": dist.item(),
+                        "cc_pred_class": cc_pred,
+                        "mlo_pred_class": mlo_pred
+                    })
 
     df = pd.DataFrame(rows)
-    df.to_csv("siamese_best_results.csv", index=False)
-    print("💾 Saved siamese_best_results.csv")
+    df.to_csv("siamese_full_results.csv", index=False)
+    print("💾 Saved siamese_full_results.csv")
 
     return df
 
 
-# =========================================================
-# Main entry
-# =========================================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CMCNet Siamese Inference")
 
-    parser.add_argument("--model_path", type=str, required=True,
-                        help="Path to CMCNet .pth model")
-
-    parser.add_argument("--cc_dir", type=str, required=True,
-                        help="Directory containing CC patch folders")
-
-    parser.add_argument("--mlo_dir", type=str, required=True,
-                        help="Directory containing MLO patch folders")
-
-    parser.add_argument("--threshold", type=float, default=4.0,
-                        help="Matching threshold")
+    parser.add_argument("--model_path", type=str, required=True)
+    parser.add_argument("--cc_dir", type=str, required=True)
+    parser.add_argument("--mlo_dir", type=str, required=True)
 
     args = parser.parse_args()
 
@@ -98,6 +78,5 @@ if __name__ == "__main__":
     run_full_inference(
         model_path=args.model_path,
         cc_dir=args.cc_dir,
-        mlo_dir=args.mlo_dir,
-        threshold=args.threshold
+        mlo_dir=args.mlo_dir
     )
