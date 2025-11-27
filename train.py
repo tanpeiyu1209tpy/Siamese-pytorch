@@ -284,8 +284,24 @@ if __name__ == "__main__":
     )
 
     # Model
+
+    #resume_path = "cmcnet_logs/best_model.pth"
+    resume_path = None
     model = CMCNet(input_channels=3, num_classes=num_classes, pretrained=True)
     model.to(device)
+    
+    
+    # -------------------------------------------------
+    # Resume Training from Best Model (if exists)
+    # -------------------------------------------------
+    if resume_path is not None and os.path.isfile(resume_path):
+        print(f"🔄 Loading pretrained model from: {resume_path}")
+        state_dict = torch.load(resume_path, map_location=device)
+        model.load_state_dict(state_dict)
+    else:
+        print("⚠ No resume model loaded")
+
+    
 
     # Loss functions
     ce_loss = nn.CrossEntropyLoss(weight=class_weights) # 使用加权交叉熵
