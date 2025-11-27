@@ -165,7 +165,7 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
             ])
             best = np.argmax(ious)
 
-            if ious[best] >= 0.5 and not gts[img_id][best]["used"]:
+            if ious[best] >= 0.01 and not gts[img_id][best]["used"]:
                 tp[i] = 1
                 gts[img_id][best]["used"] = True
             else:
