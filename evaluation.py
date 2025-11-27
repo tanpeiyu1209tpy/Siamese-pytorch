@@ -216,3 +216,18 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
         cname = "Mass" if cls_id == 0 else "Suspicious_Calcification"
 
         print(f"{cname:<15}{total_gt:<12}{precision[-1]:<8.3f}{recall[-1]:<8.3f}{ap50:<10.3f}{ap5095:.3f}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Evaluate Siamese + YOLO Fusion")
+
+    parser.add_argument("--gt_dir", type=str, required=True)
+    parser.add_argument("--yolo_pred_dir", type=str, required=True)
+    parser.add_argument("--siamese_csv", type=str, required=True)
+
+    args = parser.parse_args()
+
+    evaluate(
+        gt_dir=args.gt_dir,
+        yolo_pred_dir=args.yolo_pred_dir,
+        siamese_csv=args.siamese_csv
+    )
