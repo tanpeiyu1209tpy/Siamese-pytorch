@@ -349,8 +349,9 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
             dist = float(row["distance"])
 
             # Final (YOLO × Siamese)
-            match_score = math.exp(-dist)
-            final_score = yolo_conf * match_score
+            #match_score = math.exp(-dist)
+            final_score = yolo_conf * ( 1 / (1 + dist) )
+
 
             preds_by_class[pred_class].append(
                 (image_id, final_score, [float(xc), float(yc), float(w), float(h)])
