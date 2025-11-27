@@ -49,6 +49,9 @@ def run_full_inference(model_path, cc_dir, mlo_dir, threshold=4.0):
                 dist = dist.item()
                 cc_pred = torch.argmax(cc_logits, dim=1).item()
                 mlo_pred = torch.argmax(mlo_logits, dim=1).item()
+                
+                if cc_pred == 2 or mlo_pred == 2:
+                    continue
 
                 if dist < best_dist:
                     best_dist = dist
