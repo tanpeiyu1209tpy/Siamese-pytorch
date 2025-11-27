@@ -12,7 +12,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from nets.cmcnet import CMCNet
-from utils.dataloader_new import SiameseDataset, siamese_collate
+from utils.dataloader_new import SiameseDataset, siamese_collate,SiameseDatasetVal
 
 
 # ------------------------------------------------------
@@ -81,6 +81,7 @@ def train_one_epoch(model, loader, optimizer, device,
 # ------------------------------------------------------
 # Validation Function
 # ------------------------------------------------------
+'''
 def validate_joint(model, loader, device,
                    contrastive_loss, ce_loss, weights,
                    margin):
@@ -132,6 +133,66 @@ def validate_joint(model, loader, device,
         match_correct / total_samples,
         cc_correct / total_samples,
         mlo_correct / total_samples
+    )
+'''
+def validate_joint(model, loader, device,
+                   contrastive_loss, ce_loss, weights,
+                   margin):
+
+    model.eval()
+
+    total_loss = 0
+    total_match_correct = 0
+    total_cc_correct = 0
+    total_mlo_correct = 0
+    total_pairs = 0
+
+    threshold = margin / 2.0
+
+    with torch.no_grad():
+
+        for (cc_batch, mlo_batch), (match_label, cc_label, mlo_label) in loader:
+
+            # cc_batch shape: [B*5, C, H, W]  ← 每个 patient 五个正负对
+            cc_batch = cc_batch.to(device)
+            mlo_batch = mlo_batch.to(device)
+            match_label = match_label.to(device)
+            cc_label = cc_label.to(device)
+            mlo_label = mlo_label.to(device)
+
+            # forward all 10 samples (5 pos, 5 neg)
+            dist, cc_logits, mlo_logits = model((cc_batch, mlo_batch))
+
+            # compute loss
+            loss_m = contrastive_loss(dist, match_label)
+            loss_cc = ce_loss(cc_logits, cc_label)
+            loss_mlo = ce_loss(mlo_logits, mlo_label)
+
+            loss = (weights["gamma"] * loss_m +
+                    weights["alpha"] * loss_cc +
+                    weights["beta"] * loss_mlo)
+
+            total_loss += loss.item()
+
+            # -------------------------
+            # Compute accuracy
+            # -------------------------
+            pred_match = (dist < threshold).long()
+            total_match_correct += (pred_match == match_label).sum().item()
+
+            cc_pred = torch.argmax(cc_logits, dim=1)
+            mlo_pred = torch.argmax(mlo_logits, dim=1)
+
+            total_cc_correct += (cc_pred == cc_label).sum().item()
+            total_mlo_correct += (mlo_pred == mlo_label).sum().item()
+
+            total_pairs += match_label.size(0)
+
+    return (
+        total_loss / len(loader),
+        total_match_correct / total_pairs,
+        total_cc_correct / total_pairs,
+        total_mlo_correct / total_pairs,
     )
 
 def plot_history(history, save_dir):
@@ -201,7 +262,8 @@ if __name__ == "__main__":
 
     # NEW DATASET (CMCNet version)
     train_dataset = SiameseDataset(train_dir, input_size, random_flag=True)
-    val_dataset   = SiameseDataset(val_dir, input_size, random_flag=False)
+    #val_dataset   = SiameseDataset(val_dir, input_size, random_flag=False)
+    val_dataset   = SiameseDatasetVal(val_dir, input_size)
 
     train_loader = DataLoader(
         train_dataset,
