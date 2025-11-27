@@ -239,7 +239,7 @@ if __name__ == "__main__":
     epochs = 100
     batch_size = 32
     lr = 0.001
-    margin = 10.0   # ✔ use consistent margin everywhere
+    margin = 5.0   # ✔ use consistent margin everywhere
 
     save_dir = "cmcnet_logs"
     os.makedirs(save_dir, exist_ok=True)
