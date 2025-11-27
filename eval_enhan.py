@@ -206,3 +206,24 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
     for cls_id, total, P, R, ap50, ap5095 in result_rows:
         cname = "Mass" if cls_id == 0 else "Suspicious_Calcification"
         print(f"{cname:<15}{total:<12}{P:<8.3f}{R:<8.3f}{ap50:<10.3f}{ap5095:.3f}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Evaluate Siamese + YOLO")
+
+    parser.add_argument("--gt_dir", type=str, required=True,
+                        help="Path to ground truth YOLO labels folder (txt)")
+
+    parser.add_argument("--yolo_pred_dir", type=str, required=True,
+                        help="YOLO predicted label folder (txt with conf)")
+
+    parser.add_argument("--siamese_csv", type=str, required=True,
+                        help="siamese_full_results.csv path")
+
+    args = parser.parse_args()
+
+    evaluate(
+        gt_dir=args.gt_dir,
+        yolo_pred_dir=args.yolo_pred_dir,
+        siamese_csv=args.siamese_csv
+    )
