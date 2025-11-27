@@ -345,12 +345,20 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
             parts = lines[yolo_idx].split()
             _, xc, yc, w, h, conf = parts
 
-            yolo_conf = float(conf)
-            dist = float(row["distance"])
+            #yolo_conf = float(conf)
+            #dist = float(row["distance"])
 
             # Final (YOLO × Siamese)
             #match_score = math.exp(-dist)
-            final_score = yolo_conf * ( 1 / (1 + dist) )
+            #final_score = yolo_conf * ( 1 / (1 + dist) )
+
+            yolo_conf = float(conf)
+            dist = float(row["distance"])
+            
+            # Stable matching fusion
+            match_score = 1.0 / (1.0 + dist)
+            final_score = yolo_conf * match_score
+
 
 
             preds_by_class[pred_class].append(
