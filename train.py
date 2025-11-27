@@ -12,7 +12,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from nets.cmcnet import CMCNet
-from utils.dataloader import SiameseDataset, siamese_collate
+from utils.dataloader_new import SiameseDataset, siamese_collate
 
 
 # ------------------------------------------------------
