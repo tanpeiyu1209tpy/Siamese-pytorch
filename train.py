@@ -231,7 +231,7 @@ if __name__ == "__main__":
     #ce_loss = nn.CrossEntropyLoss()
     #contrastive = ContrastiveLoss(margin)
 
-    weights = {"alpha": 1.0, "beta": 1.0, "gamma": 0.3}
+    weights = {"alpha": 1.0, "beta": 1.0, "gamma": 0.1}
     #optimizer = optim.Adam(model.parameters(), lr=lr)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
 
