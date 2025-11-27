@@ -238,7 +238,7 @@ if __name__ == "__main__":
     num_classes = 3
     epochs = 100
     batch_size = 32
-    lr = 0.01
+    lr = 0.001
     margin = 8.0   # ✔ use consistent margin everywhere
 
     save_dir = "cmcnet_logs"
