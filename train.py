@@ -19,7 +19,7 @@ from utils.dataloader_new import SiameseDataset, siamese_collate
 # Contrastive Loss (Correct Version)
 # ------------------------------------------------------
 class ContrastiveLoss(nn.Module):
-    def __init__(self, margin=10.0):
+    def __init__(self, margin=5.0):
         super().__init__()
         self.margin = margin
 
@@ -175,9 +175,9 @@ if __name__ == "__main__":
     input_size = (64, 64)
     num_classes = 3
     epochs = 100
-    batch_size = 16
+    batch_size = 32
     lr = 0.0001
-    margin = 10.0   # ✔ use consistent margin everywhere
+    margin = 5.0   # ✔ use consistent margin everywhere
 
     save_dir = "cmcnet_logs"
     os.makedirs(save_dir, exist_ok=True)
