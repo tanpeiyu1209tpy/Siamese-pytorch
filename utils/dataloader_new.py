@@ -183,6 +183,86 @@ class SiameseDataset(Dataset):
     def load_image(self, path):
         return self.to_tensor(Image.open(path).convert("RGB"))
 
+class SiameseDatasetVal(Dataset):
+    def __init__(self, root_dir, input_size=(64,64)):
+        self.root_dir = root_dir
+        self.input_size = input_size
+
+        self.class_map = {"Mass": 0, "Calcification": 1, "Negative": 2}
+        self.data = {}
+
+        for cls_name in ["Mass", "Calcification", "Negative"]:
+            cls_dir = os.path.join(root_dir, cls_name)
+            if not os.path.exists(cls_dir):
+                continue
+
+            for fname in os.listdir(cls_dir):
+                parsed = parse_filename(fname)
+                if parsed is None:
+                    continue
+
+                pid = f"{parsed['patient_id']}_{parsed['side']}"
+
+                if pid not in self.data:
+                    self.data[pid] = {
+                        "CC_pos": [], "MLO_pos": [],
+                        "CC_neg": [], "MLO_neg": [],
+                        "cls": self.class_map[cls_name]
+                    }
+
+                fpath = os.path.join(cls_dir, fname)
+                label = self.class_map[cls_name]
+
+                # store with idx
+                if parsed["view"] == "CC":
+                    if cls_name == "Negative":
+                        self.data[pid]["CC_neg"].append((fpath, 2, parsed["idx"]))
+                    else:
+                        self.data[pid]["CC_pos"].append((fpath, label, parsed["idx"]))
+                else:
+                    if cls_name == "Negative":
+                        self.data[pid]["MLO_neg"].append((fpath, 2, parsed["idx"]))
+                    else:
+                        self.data[pid]["MLO_pos"].append((fpath, label, parsed["idx"]))
+
+        self.valid_ids = [
+            pid for pid, v in self.data.items()
+            if len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0
+        ]
+
+        self.to_tensor = transforms.Compose([
+            transforms.Resize(input_size),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485,0.456,0.406], [0.229,0.224,0.225])
+        ])
+
+    def __len__(self):
+        return len(self.valid_ids)
+
+    def __getitem__(self, idx):
+        pid = self.valid_ids[idx]
+        v = self.data[pid]
+
+        # sorted by idx
+        CC_pos_sorted = sorted(v["CC_pos"], key=lambda x: x[2])
+        MLO_pos_sorted = sorted(v["MLO_pos"], key=lambda x: x[2])
+
+        # always use ALL 5 patches
+        pos_pairs = []
+        for (cc_p, cc_lbl, _), (mlo_p, mlo_lbl, _) in zip(CC_pos_sorted, MLO_pos_sorted):
+            pos_pairs.append((cc_p, cc_lbl, mlo_p, mlo_lbl))
+
+        # negative fixed pairing: CC_pos[i] with MLO_neg[i]
+        CC_neg_sorted = sorted(v["CC_neg"], key=lambda x: x[2])
+        MLO_neg_sorted = sorted(v["MLO_neg"], key=lambda x: x[2])
+
+        neg_pairs = []
+        for i in range(min(len(CC_neg_sorted), len(MLO_neg_sorted))):
+            cc_p, cc_lbl, _ = CC_neg_sorted[i]
+            mlo_p, mlo_lbl, _ = MLO_neg_sorted[i]
+            neg_pairs.append((cc_p, cc_lbl, mlo_p, mlo_lbl))
+
+        return pos_pairs, neg_pairs
 
 
 def siamese_collate(batch):
