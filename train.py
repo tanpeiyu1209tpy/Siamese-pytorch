@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 from nets.cmcnet import CMCNet
 from utils.dataloader import SiameseDataset, siamese_collate
@@ -133,7 +134,36 @@ def validate_joint(model, loader, device,
         mlo_correct / total_samples
     )
 
+def plot_history(history, save_dir):
+    epochs = range(1, len(history["train_loss"]) + 1)
+    
+    # --- 1. Loss Plot ---
+    plt.figure(figsize=(10, 5))
+    plt.plot(epochs, history["train_loss"], 'r', label='Training Loss')
+    plt.plot(epochs, history["val_loss"], 'b', label='Validation Loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(save_dir, "loss_plot.png"))
+    plt.close()
 
+    # --- 2. Accuracy Plot ---
+    plt.figure(figsize=(12, 5))
+    plt.plot(epochs, history["match_acc"], 'g', label='Match Accuracy (Contrastive)')
+    plt.plot(epochs, history["cc_acc"], 'm', label='CC Class. Accuracy')
+    plt.plot(epochs, history["mlo_acc"], 'c', label='MLO Class. Accuracy')
+    plt.title('Validation Accuracies for Three Tasks')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(save_dir, "accuracy_plot.png"))
+    plt.close()
+
+    print(f"\n[INFO] Plots saved to {save_dir}/")
+    
 # ------------------------------------------------------
 # Main Training Loop
 # ------------------------------------------------------
@@ -207,6 +237,14 @@ if __name__ == "__main__":
 
     best_val = 1e9
 
+    history = {
+        "train_loss": [],
+        "val_loss": [],
+        "match_acc": [],
+        "cc_acc": [],
+        "mlo_acc": []
+    }
+
     # --------------------------------------------------
     # Training Loop
     # --------------------------------------------------
@@ -224,6 +262,12 @@ if __name__ == "__main__":
             margin=margin
         )
 
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["match_acc"].append(match_acc)
+        history["cc_acc"].append(cc_acc)
+        history["mlo_acc"].append(mlo_acc)
+
         print("\n------------------------------")
         print(f"Epoch {epoch}/{epochs}")
         print(f"Train Loss      : {train_loss:.4f}")
@@ -240,3 +284,4 @@ if __name__ == "__main__":
             print("✔ Saved best_model.pth")
 
         torch.save(model.state_dict(), os.path.join(save_dir, f"epoch_{epoch}.pth"))
+        plot_history(history, save_dir)
