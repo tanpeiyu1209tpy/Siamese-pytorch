@@ -175,9 +175,9 @@ if __name__ == "__main__":
     input_size = (64, 64)
     num_classes = 3
     epochs = 100
-    batch_size = 4
-    lr = 0.0005
-    margin = 15.0   # ✔ use consistent margin everywhere
+    batch_size = 64
+    lr = 0.0001
+    margin = 10.0   # ✔ use consistent margin everywhere
 
     save_dir = "cmcnet_logs"
     os.makedirs(save_dir, exist_ok=True)
@@ -231,7 +231,7 @@ if __name__ == "__main__":
     #ce_loss = nn.CrossEntropyLoss()
     #contrastive = ContrastiveLoss(margin)
 
-    weights = {"alpha": 1.0, "beta": 1.0, "gamma": 0.1}
+    weights = {"alpha": 1.0, "beta": 1.0, "gamma": 0.3}
     #optimizer = optim.Adam(model.parameters(), lr=lr)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
 
