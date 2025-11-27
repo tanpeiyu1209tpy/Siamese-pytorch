@@ -230,14 +230,14 @@ def plot_history(history, save_dir):
 # ------------------------------------------------------
 if __name__ == "__main__":
 
-    train_dir = "/kaggle/input/s-dataset/siamese/train_data_siamese"
-    val_dir   = "/kaggle/input/s-dataset/siamese/val_data_siamese"
+    train_dir = "/kaggle/input/sia128/siamese128/train"
+    val_dir   = "/kaggle/input/sia128/siamese128/val"
 
-    input_size = (64, 64)
+    input_size = (128, 128)
     num_classes = 3
     epochs = 100
     batch_size = 32
-    lr = 0.0001
+    lr = 0.001
     margin = 5.0   # ✔ use consistent margin everywhere
 
     save_dir = "cmcnet_logs"
