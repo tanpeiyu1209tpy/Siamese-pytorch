@@ -116,44 +116,48 @@ class SiameseDataset(Dataset):
     def __getitem__(self, idx):
         pid = self.valid_ids[idx]
         v = self.data[pid]
-
+    
         # ======================================================
         # ⭐ 1. Positive pair (index aligned)
         # ======================================================
-        # Extract CC_pos and MLO_pos sorted by idx
-        CC_pos_sorted = sorted(v["CC_pos"], key=lambda x: x[2])
+        CC_pos_sorted = sorted(v["CC_pos"], key=lambda x: x[2])  # (path, lbl, idx)
         MLO_pos_sorted = sorted(v["MLO_pos"], key=lambda x: x[2])
-
-        # Choose the same index (0–4)
+    
         i = random.randint(0, min(len(CC_pos_sorted), len(MLO_pos_sorted)) - 1)
-
+    
         cc_pos_path, cc_pos_lbl, _ = CC_pos_sorted[i]
         mlo_pos_path, mlo_pos_lbl, _ = MLO_pos_sorted[i]
-
-        match_pos = 1.0  # same lesion
-
+    
+        match_pos = 1.0
+    
         # ======================================================
-        # ⭐ 2. Negative pair (strict & stable)
+        # ⭐ helper: unpack function (handles 2-tuple or 3-tuple)
         # ======================================================
-        cc_neg_pool = v["CC_neg"] + [(p, lbl) for (p, lbl, _) in v["CC_pos"]]
-        mlo_neg_pool = v["MLO_neg"] + [(p, lbl) for (p, lbl, _) in v["MLO_pos"]]
-
+        def unpack(item):
+            return item[0], item[1]
+    
+        # ======================================================
+        # ⭐ 2. Negative pair (三种情况)
+        # ======================================================
         case = random.random()
+    
         if case < 0.33:
-            # pos ↔ neg
-            cc_neg_path, cc_neg_lbl = random.choice(v["CC_pos"])
-            mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_neg"])
+            # pos ↔ neg  (CC_pos × MLO_neg)
+            cc_neg_path, cc_neg_lbl = unpack(random.choice(v["CC_pos"]))
+            mlo_neg_path, mlo_neg_lbl = unpack(random.choice(v["MLO_neg"]))
+    
         elif case < 0.66:
-            # neg ↔ pos
-            cc_neg_path, cc_neg_lbl = random.choice(v["CC_neg"])
-            mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_pos"])
+            # neg ↔ pos  (CC_neg × MLO_pos)
+            cc_neg_path, cc_neg_lbl = unpack(random.choice(v["CC_neg"]))
+            mlo_neg_path, mlo_neg_lbl = unpack(random.choice(v["MLO_pos"]))
+    
         else:
-            # neg ↔ neg
-            cc_neg_path, cc_neg_lbl = random.choice(v["CC_neg"])
-            mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_neg"])
-
+            # neg ↔ neg  (CC_neg × MLO_neg)
+            cc_neg_path, cc_neg_lbl = unpack(random.choice(v["CC_neg"]))
+            mlo_neg_path, mlo_neg_lbl = unpack(random.choice(v["MLO_neg"]))
+    
         match_neg = 0.0
-
+    
         # ======================================================
         # Load images
         # ======================================================
@@ -165,7 +169,7 @@ class SiameseDataset(Dataset):
             self.load_image(mlo_pos_path),
             self.load_image(mlo_neg_path)
         ]
-
+    
         return (
             torch.stack(cc_imgs),
             torch.stack(mlo_imgs)
@@ -174,6 +178,7 @@ class SiameseDataset(Dataset):
             torch.tensor([cc_pos_lbl, cc_neg_lbl]).long(),
             torch.tensor([mlo_pos_lbl, mlo_neg_lbl]).long(),
         )
+
 
     def load_image(self, path):
         return self.to_tensor(Image.open(path).convert("RGB"))
