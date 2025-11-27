@@ -12,9 +12,7 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
-# ------------------------------------------------------
-# 解析 patch 文件名:  imageid_CC_pred3_yolo10.png
-# ------------------------------------------------------
+# 解析 patch 文件名
 def parse_patch_filename(name):
     name = name.replace(".png", "")
     m = re.match(r"(.+?)_([A-Z]+)_pred(\d+)_yolo(\d+)", name)
@@ -48,10 +46,11 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
         cc_list = sorted(os.listdir(os.path.join(cc_dir, p)))
         mlo_list = sorted(os.listdir(os.path.join(mlo_dir, p)))
 
-        all_pairs = []  # will store raw (cc, mlo, dist...)
+        best_pair = None  # ⭐ 最佳 pair
+        best_dist = float("inf")
 
         # ----------------------------------------
-        # Step 0 — compute all distances
+        # Step 0 — compute all distances and pick global best
         # ----------------------------------------
         for cc_f in cc_list:
             cc_info = parse_patch_filename(cc_f)
@@ -77,61 +76,30 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
                 cc_pred = torch.argmax(cc_logits, dim=1).item()
                 mlo_pred = torch.argmax(mlo_logits, dim=1).item()
 
-                if cc_pred in (0, 1) and mlo_pred in (0, 1):  # keep only positive
-                    all_pairs.append({
-                        "cc": cc_f,
-                        "mlo": mlo_f,
-                        "dist": dist.item(),
-                        "cc_pred": cc_pred,
-                        "mlo_pred": mlo_pred,
-                        "cc_imgid": cc_imgid,
-                        "mlo_imgid": mlo_imgid,
-                        "cc_yolo_idx": cc_yolo_idx,
-                        "mlo_yolo_idx": mlo_yolo_idx
-                    })
+                # only positive
+                if cc_pred in (0,1) and mlo_pred in (0,1):
+
+                    # ⭐ pick global best (minimum distance)
+                    if dist.item() < best_dist:
+                        best_dist = dist.item()
+                        best_pair = {
+                            "patient": p,
+                            "CC_patch": cc_f,
+                            "MLO_patch": mlo_f,
+                            "distance": dist.item(),
+                            "cc_pred_class": cc_pred,
+                            "mlo_pred_class": mlo_pred,
+                            "cc_image_id": cc_imgid,
+                            "mlo_image_id": mlo_imgid,
+                            "cc_yolo_idx": cc_yolo_idx,
+                            "mlo_yolo_idx": mlo_yolo_idx
+                        }
 
         # ----------------------------------------
-        # Step 1 — pick best MLO per CC
+        # Step 1 — save only ONE best pair for this patient
         # ----------------------------------------
-        cc_best = {}
-        for d in all_pairs:
-            cc = d["cc"]
-            if cc not in cc_best or d["dist"] < cc_best[cc]["dist"]:
-                cc_best[cc] = d
-
-        # ----------------------------------------
-        # Step 2 — pick best CC per MLO
-        # ----------------------------------------
-        mlo_best = {}
-        for d in all_pairs:
-            mlo = d["mlo"]
-            if mlo not in mlo_best or d["dist"] < mlo_best[mlo]["dist"]:
-                mlo_best[mlo] = d
-
-        # ----------------------------------------
-        # Step 3 — merge and deduplicate
-        # ----------------------------------------
-        final_pairs = {}
-        for d in list(cc_best.values()) + list(mlo_best.values()):
-            key = (d["cc"], d["mlo"])
-            final_pairs[key] = d
-
-        # ----------------------------------------
-        # Step 4 — write rows
-        # ----------------------------------------
-        for d in final_pairs.values():
-            rows.append({
-                "patient": p,
-                "CC_patch": d["cc"],
-                "MLO_patch": d["mlo"],
-                "distance": d["dist"],
-                "cc_pred_class": d["cc_pred"],
-                "mlo_pred_class": d["mlo_pred"],
-                "cc_image_id": d["cc_imgid"],
-                "mlo_image_id": d["mlo_imgid"],
-                "cc_yolo_idx": d["cc_yolo_idx"],
-                "mlo_yolo_idx": d["mlo_yolo_idx"]
-            })
+        if best_pair is not None:
+            rows.append(best_pair)
 
     df = pd.DataFrame(rows)
     df.to_csv("siamese_full_results.csv", index=False)
@@ -145,7 +113,12 @@ if __name__ == "__main__":
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--cc_dir", type=str, required=True)
     parser.add_argument("--mlo_dir", type=str, required=True)
-    args = parser.parse_args()
 
+    args = parser.parse_args()
     print("🚀 Starting inference...\n")
-    run_full_inference(args.model_path, args.cc_dir, args.mlo_dir)
+
+    run_full_inference(
+        model_path=args.model_path,
+        cc_dir=args.cc_dir,
+        mlo_dir=args.mlo_dir
+    )
