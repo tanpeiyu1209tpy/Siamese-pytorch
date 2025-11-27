@@ -1,7 +1,6 @@
 import os
 import random
 import re
-from collections import defaultdict
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
@@ -9,8 +8,7 @@ from torchvision import transforms
 
 
 # ===============================================================
-# 解析文件名: <pid>_<side>_<view>_(pos|neg)<idx>.png
-# 或       : <pid>_<side>_<view>_(pos|neg)_<idx>.png
+# Parse filename: <pid>_<side>_<view>_(pos|neg)<idx>.png
 # ===============================================================
 def parse_filename(fname):
     pattern = r"^(.*?)_([LR])_(CC|MLO)_(pos|neg)_?(\d+)\.png$"
@@ -19,41 +17,32 @@ def parse_filename(fname):
         return {
             "patient_id": m.group(1),
             "side": m.group(2),
-            "view": m.group(3),          # CC / MLO
-            "patch_type": m.group(4),    # pos / neg
-            "idx": int(m.group(5))       # 0,1,2,...
+            "view": m.group(3),
+            "patch_type": m.group(4),
+            "idx": int(m.group(5))
         }
     return None
 
 
 # ===============================================================
-# CMCNet SiameseDataset — 论文版 (K=5)
+# ⭐ Final Version: CMCNet Siamese Dataset ⭐
 # ===============================================================
 class SiameseDataset(Dataset):
-    def __init__(self, root_dir, input_size=(64, 64),
-                 random_flag=True, k_per_lesion=5):
-        print("📌 Using PAPER-STYLE CMCNet SiameseDataset !!!")
+    def __init__(self, root_dir, input_size=(64, 64), random_flag=True):
+        print("📌 Loading FINAL CMCNet SiameseDataset")
 
         self.root_dir = root_dir
         self.random_flag = random_flag
         self.input_size = input_size
-        self.k_per_lesion = k_per_lesion
 
-        # 文件夹 → 类别 id（和你训练代码一致）
+        # Class mapping
         self.class_map = {"Mass": 0, "Calcification": 1, "Negative": 2}
 
-        # pid → meta
-        # meta 结构：
-        # {
-        #   "CC_pos_lesions": {lesion_id: [(path, cls), ...], ...}
-        #   "MLO_pos_lesions": {...}
-        #   "CC_neg": [(path, 2), ...]
-        #   "MLO_neg": [(path, 2), ...]
-        # }
-        self.meta = {}
+        # pid → CC/MLO positive & negative patches
+        self.data = {}
 
         # -------------------------------------------------
-        # 1. 扫描所有 patch
+        # Scan folders
         # -------------------------------------------------
         for cls_name in ["Mass", "Calcification", "Negative"]:
             cls_dir = os.path.join(root_dir, cls_name)
@@ -66,76 +55,42 @@ class SiameseDataset(Dataset):
                     continue
 
                 pid = f"{parsed['patient_id']}_{parsed['side']}"
-                view = parsed["view"]
-                patch_type = parsed["patch_type"]
-                idx = parsed["idx"]
-
-                if pid not in self.meta:
-                    self.meta[pid] = {
-                        "CC_pos_lesions": defaultdict(list),
-                        "MLO_pos_lesions": defaultdict(list),
-                        "CC_neg": [],
-                        "MLO_neg": []
+                if pid not in self.data:
+                    self.data[pid] = {
+                        "CC_pos": [], "MLO_pos": [],
+                        "CC_neg": [], "MLO_neg": [],
+                        "cls": self.class_map[cls_name]
                     }
 
                 fpath = os.path.join(cls_dir, fname)
+                label = self.class_map[cls_name]
 
-                # 正样本: 来自 Mass / Calcification + pos
-                is_pos = (cls_name != "Negative" and patch_type == "pos")
-                # 负样本: Negative 文件夹 或 patch_type == 'neg'
-                is_neg = (cls_name == "Negative" or patch_type == "neg")
-
-                if is_pos:
-                    lesion_id = idx // self.k_per_lesion  # K=5 → lesion 分组
-                    cls_id = self.class_map[cls_name]
-
-                    if view == "CC":
-                        self.meta[pid]["CC_pos_lesions"][lesion_id].append(
-                            (fpath, cls_id)
-                        )
-                    else:  # MLO
-                        self.meta[pid]["MLO_pos_lesions"][lesion_id].append(
-                            (fpath, cls_id)
-                        )
-
-                elif is_neg:
-                    # 所有 negative patch 的 cls 统一用 2 (Negative)
-                    if view == "CC":
-                        self.meta[pid]["CC_neg"].append((fpath, 2))
+                # Store into correct bucket
+                if parsed["view"] == "CC":
+                    if parsed["patch_type"] == "pos":
+                        self.data[pid]["CC_pos"].append((fpath, label, parsed["idx"]))
                     else:
-                        self.meta[pid]["MLO_neg"].append((fpath, 2))
+                        self.data[pid]["CC_neg"].append((fpath, 2))
+                else:
+                    if parsed["patch_type"] == "pos":
+                        self.data[pid]["MLO_pos"].append((fpath, label, parsed["idx"]))
+                    else:
+                        self.data[pid]["MLO_neg"].append((fpath, 2))
 
         # -------------------------------------------------
-        # 2. 只保留 “同时有 CC 正样本 & MLO 正样本” 的病人
-        #    （和论文一样：matching 只对有 mass 的 pair 做正样本）
+        # Patients with valid CC & MLO (positive or negative)
         # -------------------------------------------------
-        self.valid_ids = []
-        self.patient_info = {}
+        self.valid_ids = [
+            pid for pid, v in self.data.items()
+            if (len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0)
+        ]
 
-        for pid, v in self.meta.items():
-            cc_lesions = set(v["CC_pos_lesions"].keys())
-            mlo_lesions = set(v["MLO_pos_lesions"].keys())
-            common_lesions = sorted(list(cc_lesions & mlo_lesions))
-
-            if len(common_lesions) == 0:
-                # 没有共同 lesion，就不用于 matching 训练
-                continue
-
-            self.valid_ids.append(pid)
-            self.patient_info[pid] = {
-                "CC_pos_lesions": v["CC_pos_lesions"],
-                "MLO_pos_lesions": v["MLO_pos_lesions"],
-                "CC_neg": v["CC_neg"],
-                "MLO_neg": v["MLO_neg"],
-                "common_lesions": common_lesions
-            }
-
-        print(f"✔ Loaded {len(self.valid_ids)} valid patient-sides with CC+MLO.")
+        print(f"✔ Valid patient-sides: {len(self.valid_ids)}")
 
         # -------------------------------------------------
-        # 3. transform（训练：随机增强 / 验证：只 resize+norm）
+        # Transforms
         # -------------------------------------------------
-        if self.random_flag:
+        if random_flag:
             self.to_tensor = transforms.Compose([
                 transforms.RandomRotation(25),
                 transforms.RandomHorizontalFlip(),
@@ -156,62 +111,52 @@ class SiameseDataset(Dataset):
         return len(self.valid_ids)
 
     # ======================================================
-    # 返回：1 个正 pair + 1 个负 pair
+    # ⭐ Final sampling strategy (论文级)：1 pos + 1 neg
     # ======================================================
     def __getitem__(self, idx):
         pid = self.valid_ids[idx]
-        info = self.patient_info[pid]
+        v = self.data[pid]
 
-        cc_pos_lesions = info["CC_pos_lesions"]
-        mlo_pos_lesions = info["MLO_pos_lesions"]
-        cc_neg_list = info["CC_neg"]
-        mlo_neg_list = info["MLO_neg"]
-        common_lesions = info["common_lesions"]
+        # ======================================================
+        # ⭐ 1. Positive pair (index aligned)
+        # ======================================================
+        # Extract CC_pos and MLO_pos sorted by idx
+        CC_pos_sorted = sorted(v["CC_pos"], key=lambda x: x[2])
+        MLO_pos_sorted = sorted(v["MLO_pos"], key=lambda x: x[2])
 
-        # -------------------------
-        # ① POSITIVE pair (same lesion)
-        # -------------------------
-        lesion_id = random.choice(common_lesions)
-        cc_pos_path, cc_pos_lbl = random.choice(cc_pos_lesions[lesion_id])
-        mlo_pos_path, mlo_pos_lbl = random.choice(mlo_pos_lesions[lesion_id])
-        match_pos = 1.0
+        # Choose the same index (0–4)
+        i = random.randint(0, min(len(CC_pos_sorted), len(MLO_pos_sorted)) - 1)
 
-        # -------------------------
-        # ② NEGATIVE pair
-        #    - 首选：一个 positive + 一个 negative
-        #    - 兜底：两个不同 lesion 的 positive 也算不匹配
-        # -------------------------
-        use_cc_neg = len(cc_neg_list) > 0
-        use_mlo_neg = len(mlo_neg_list) > 0
+        cc_pos_path, cc_pos_lbl, _ = CC_pos_sorted[i]
+        mlo_pos_path, mlo_pos_lbl, _ = MLO_pos_sorted[i]
 
-        if random.random() < 0.5 and use_cc_neg:
-            # CC negative + MLO positive
-            cc_neg_path, cc_neg_lbl = random.choice(cc_neg_list)
-            # MLO positive 可以来自任意 lesion（包括同一个）
-            lid = random.choice(common_lesions)
-            mlo_neg_path, mlo_neg_lbl = random.choice(mlo_pos_lesions[lid])
+        match_pos = 1.0  # same lesion
 
-        elif use_mlo_neg:
-            # CC positive + MLO negative
-            lid = random.choice(common_lesions)
-            cc_neg_path, cc_neg_lbl = random.choice(cc_pos_lesions[lid])
-            mlo_neg_path, mlo_neg_lbl = random.choice(mlo_neg_list)
+        # ======================================================
+        # ⭐ 2. Negative pair (strict & stable)
+        # ======================================================
+        cc_neg_pool = v["CC_neg"] + [(p, lbl) for (p, lbl, _) in v["CC_pos"]]
+        mlo_neg_pool = v["MLO_neg"] + [(p, lbl) for (p, lbl, _) in v["MLO_pos"]]
 
+        case = random.random()
+        if case < 0.33:
+            # pos ↔ neg
+            cc_neg_path, cc_neg_lbl = random.choice(v["CC_pos"])
+            mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_neg"])
+        elif case < 0.66:
+            # neg ↔ pos
+            cc_neg_path, cc_neg_lbl = random.choice(v["CC_neg"])
+            mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_pos"])
         else:
-            # 兜底：都没有 negative patch，就用两个不同 lesion 的 positive
-            if len(common_lesions) > 1:
-                lid1, lid2 = random.sample(common_lesions, 2)
-            else:
-                lid1 = lid2 = common_lesions[0]
-
-            cc_neg_path, cc_neg_lbl = random.choice(cc_pos_lesions[lid1])
-            mlo_neg_path, mlo_neg_lbl = random.choice(mlo_pos_lesions[lid2])
+            # neg ↔ neg
+            cc_neg_path, cc_neg_lbl = random.choice(v["CC_neg"])
+            mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_neg"])
 
         match_neg = 0.0
 
-        # -------------------------
-        # load images
-        # -------------------------
+        # ======================================================
+        # Load images
+        # ======================================================
         cc_imgs = [
             self.load_image(cc_pos_path),
             self.load_image(cc_neg_path)
@@ -221,23 +166,18 @@ class SiameseDataset(Dataset):
             self.load_image(mlo_neg_path)
         ]
 
-        # match_label: [1, 0]
-        match_labels = torch.tensor([match_pos, match_neg], dtype=torch.float32)
-        # classification labels: 0/1/2, 保持你的 num_classes=3 设定
-        cc_cls = torch.tensor([cc_pos_lbl, cc_neg_lbl], dtype=torch.long)
-        mlo_cls = torch.tensor([mlo_pos_lbl, mlo_neg_lbl], dtype=torch.long)
-
         return (
-            torch.stack(cc_imgs),   # (2, C, H, W)
-            torch.stack(mlo_imgs)   # (2, C, H, W)
+            torch.stack(cc_imgs),
+            torch.stack(mlo_imgs)
         ), (
-            match_labels,           # (2,)
-            cc_cls,                 # (2,)
-            mlo_cls                 # (2,)
+            torch.tensor([match_pos, match_neg]).float(),
+            torch.tensor([cc_pos_lbl, cc_neg_lbl]).long(),
+            torch.tensor([mlo_pos_lbl, mlo_neg_lbl]).long(),
         )
 
     def load_image(self, path):
         return self.to_tensor(Image.open(path).convert("RGB"))
+
 
 
 def siamese_collate(batch):
