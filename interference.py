@@ -11,26 +11,6 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
-
-def classify_single_patch(model, img_path, view, device):
-    """对单个 patch 做分类，返回 predicted class"""
-    img = cv2.imread(img_path)
-    if img is None:
-        return None
-
-    img_tensor = transform(img).unsqueeze(0).to(device)
-
-    with torch.no_grad():
-        dist, cc_logits, mlo_logits = model((img_tensor, img_tensor))
-
-    if view == "CC":
-        pred = torch.argmax(cc_logits, dim=1).item()
-    else:
-        pred = torch.argmax(mlo_logits, dim=1).item()
-
-    return pred
-
-
 def run_full_inference(model_path, cc_dir, mlo_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -48,69 +28,43 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
     for p in patients:
         print(f"➡ Processing {p} ...")
 
-        # ---------------------------
-        # CC patches (single patch classification)
-        # ---------------------------
-        cc_path = os.path.join(cc_dir, p)
-        for cc_f in sorted(os.listdir(cc_path)):
+        cc_patches = sorted(os.listdir(os.path.join(cc_dir, p)))
+        mlo_patches = sorted(os.listdir(os.path.join(mlo_dir, p)))
 
-            if "_pred" not in cc_f:
-                continue
+        for cc_f in cc_patches:
+            cc_img = cv2.imread(os.path.join(cc_dir, p, cc_f))
+            cc_tensor = transform(cc_img).unsqueeze(0).to(device)
 
-            img_path = os.path.join(cc_path, cc_f)
+            for mlo_f in mlo_patches:
+                mlo_img = cv2.imread(os.path.join(mlo_dir, p, mlo_f))
+                mlo_tensor = transform(mlo_img).unsqueeze(0).to(device)
 
-            pred_class = classify_single_patch(model, img_path, "CC", device)
-            if pred_class not in (0, 1):   # skip negative 2
-                continue
+                with torch.no_grad():
+                    dist, cc_logits, mlo_logits = model((cc_tensor, mlo_tensor))
 
-            # 解析 YOLO index
-            idx = int(cc_f.split("_pred")[-1].split(".")[0])
+                cc_pred = torch.argmax(cc_logits, dim=1).item()
+                mlo_pred = torch.argmax(mlo_logits, dim=1).item()
 
-            rows.append({
-                "patient": p,
-                "view": "CC",
-                "patch": cc_f,
-                "pred_class": pred_class,
-                "yolo_index": idx
-            })
-
-        # ---------------------------
-        # MLO patches
-        # ---------------------------
-        mlo_path = os.path.join(mlo_dir, p)
-        for mlo_f in sorted(os.listdir(mlo_path)):
-
-            if "_pred" not in mlo_f:
-                continue
-
-            img_path = os.path.join(mlo_path, mlo_f)
-
-            pred_class = classify_single_patch(model, img_path, "MLO", device)
-            if pred_class not in (0, 1):   # skip negative
-                continue
-
-            idx = int(mlo_f.split("_pred")[-1].split(".")[0])
-
-            rows.append({
-                "patient": p,
-                "view": "MLO",
-                "patch": mlo_f,
-                "pred_class": pred_class,
-                "yolo_index": idx
-            })
+                # ⭐ 保留 positive（0:Mass, 1:Cal）🚫 不要 class 2
+                if cc_pred in (0, 1) and mlo_pred in (0, 1):
+                    rows.append({
+                        "patient": p,
+                        "CC_patch": cc_f,
+                        "MLO_patch": mlo_f,
+                        "distance": dist.item(),
+                        "cc_pred_class": cc_pred,
+                        "mlo_pred_class": mlo_pred
+                    })
 
     df = pd.DataFrame(rows)
-    df.to_csv("siamese_filtered_patches.csv", index=False)
-    print("💾 Saved siamese_filtered_patches.csv")
+    df.to_csv("siamese_full_results.csv", index=False)
+    print("💾 Saved siamese_full_results.csv")
 
     return df
 
 
-# =========================================================
-# Main
-# =========================================================
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CMCNet patch-level inference")
+    parser = argparse.ArgumentParser(description="CMCNet Siamese Inference")
 
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--cc_dir", type=str, required=True)
