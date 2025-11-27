@@ -314,7 +314,7 @@ if __name__ == "__main__":
     #optimizer = optim.Adam(model.parameters(), lr=lr)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
 
-    scheduler = StepLR(optimizer, step_size=40, gamma=0.1)
+    #scheduler = StepLR(optimizer, step_size=40, gamma=0.1)
 
     best_val = 1e9
 
@@ -331,6 +331,17 @@ if __name__ == "__main__":
     # --------------------------------------------------
     for epoch in range(1, epochs + 1):
 
+        if epoch == 1:
+            optimizer.param_groups[0]['lr'] = 0.001
+        elif epoch == 40:
+            optimizer.param_groups[0]['lr'] = 0.0005
+        elif epoch == 80:
+            optimizer.param_groups[0]['lr'] = 0.0001
+        
+        current_lr = optimizer.param_groups[0]['lr']
+        print(f"[LR] Current learning rate: {current_lr}")
+
+        
         train_loss = train_one_epoch(
             model, train_loader, optimizer, device,
             contrastive, ce_loss, weights,
