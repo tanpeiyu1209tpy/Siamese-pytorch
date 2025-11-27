@@ -185,12 +185,17 @@ class SiameseDataset(Dataset):
 
 class SiameseDatasetVal(Dataset):
     def __init__(self, root_dir, input_size=(64,64)):
+        print("📌 Loading FINAL CMCNet SiameseDatasetVal")
+
         self.root_dir = root_dir
         self.input_size = input_size
 
         self.class_map = {"Mass": 0, "Calcification": 1, "Negative": 2}
         self.data = {}
 
+        # -------------------------------------------------
+        # scan folders
+        # -------------------------------------------------
         for cls_name in ["Mass", "Calcification", "Negative"]:
             cls_dir = os.path.join(root_dir, cls_name)
             if not os.path.exists(cls_dir):
@@ -206,63 +211,104 @@ class SiameseDatasetVal(Dataset):
                 if pid not in self.data:
                     self.data[pid] = {
                         "CC_pos": [], "MLO_pos": [],
-                        "CC_neg": [], "MLO_neg": [],
-                        "cls": self.class_map[cls_name]
+                        "CC_neg": [], "MLO_neg": []
                     }
 
                 fpath = os.path.join(cls_dir, fname)
-                label = self.class_map[cls_name]
+                lbl = self.class_map[cls_name]
 
-                # store with idx
                 if parsed["view"] == "CC":
-                    if cls_name == "Negative":
+                    if parsed["patch_type"] == "pos":
+                        self.data[pid]["CC_pos"].append((fpath, lbl, parsed["idx"]))
+                    else:
                         self.data[pid]["CC_neg"].append((fpath, 2, parsed["idx"]))
-                    else:
-                        self.data[pid]["CC_pos"].append((fpath, label, parsed["idx"]))
                 else:
-                    if cls_name == "Negative":
-                        self.data[pid]["MLO_neg"].append((fpath, 2, parsed["idx"]))
+                    if parsed["patch_type"] == "pos":
+                        self.data[pid]["MLO_pos"].append((fpath, lbl, parsed["idx"]))
                     else:
-                        self.data[pid]["MLO_pos"].append((fpath, label, parsed["idx"]))
+                        self.data[pid]["MLO_neg"].append((fpath, 2, parsed["idx"]))
 
+        # only patients with both CC_pos & MLO_pos
         self.valid_ids = [
             pid for pid, v in self.data.items()
-            if len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0
+            if len(v["CC_pos"]) >= 1 and len(v["MLO_pos"]) >= 1
         ]
+
+        print(f"✔ Valid patient-sides (val): {len(self.valid_ids)}")
 
         self.to_tensor = transforms.Compose([
             transforms.Resize(input_size),
             transforms.ToTensor(),
-            transforms.Normalize([0.485,0.456,0.406], [0.229,0.224,0.225])
+            transforms.Normalize([0.485,0.456,0.406],
+                                 [0.229,0.224,0.225])
         ])
 
     def __len__(self):
         return len(self.valid_ids)
 
+    def load(self, path):
+        return self.to_tensor(Image.open(path).convert("RGB"))
+
     def __getitem__(self, idx):
         pid = self.valid_ids[idx]
         v = self.data[pid]
 
-        # sorted by idx
-        CC_pos_sorted = sorted(v["CC_pos"], key=lambda x: x[2])
-        MLO_pos_sorted = sorted(v["MLO_pos"], key=lambda x: x[2])
+        # ----------------------------------------------
+        # ✔ sort by idx
+        # ----------------------------------------------
+        CC_pos = sorted(v["CC_pos"], key=lambda x: x[2])
+        MLO_pos = sorted(v["MLO_pos"], key=lambda x: x[2])
+        CC_neg = sorted(v["CC_neg"], key=lambda x: x[2])
+        MLO_neg = sorted(v["MLO_neg"], key=lambda x: x[2])
 
-        # always use ALL 5 patches
-        pos_pairs = []
-        for (cc_p, cc_lbl, _), (mlo_p, mlo_lbl, _) in zip(CC_pos_sorted, MLO_pos_sorted):
-            pos_pairs.append((cc_p, cc_lbl, mlo_p, mlo_lbl))
+        # ----------------------------------------------
+        # ✔ Positive Pairs (aligned index)
+        # ----------------------------------------------
+        pos_cc, pos_mlo = [], []
+        pos_cc_lbl, pos_mlo_lbl = [], []
 
-        # negative fixed pairing: CC_pos[i] with MLO_neg[i]
-        CC_neg_sorted = sorted(v["CC_neg"], key=lambda x: x[2])
-        MLO_neg_sorted = sorted(v["MLO_neg"], key=lambda x: x[2])
+        K = min(len(CC_pos), len(MLO_pos), 5)
 
-        neg_pairs = []
-        for i in range(min(len(CC_neg_sorted), len(MLO_neg_sorted))):
-            cc_p, cc_lbl, _ = CC_neg_sorted[i]
-            mlo_p, mlo_lbl, _ = MLO_neg_sorted[i]
-            neg_pairs.append((cc_p, cc_lbl, mlo_p, mlo_lbl))
+        for i in range(K):
+            cc_p, cc_lbl, _ = CC_pos[i]
+            mlo_p, mlo_lbl, _ = MLO_pos[i]
 
-        return pos_pairs, neg_pairs
+            pos_cc.append(self.load(cc_p))
+            pos_mlo.append(self.load(mlo_p))
+            pos_cc_lbl.append(cc_lbl)
+            pos_mlo_lbl.append(mlo_lbl)
+
+        # ----------------------------------------------
+        # ✔ Negative pairs (固定 pairing)
+        # ----------------------------------------------
+        neg_cc, neg_mlo = [], []
+        neg_cc_lbl, neg_mlo_lbl = [], []
+
+        N = min(len(CC_neg), len(MLO_neg), 5)
+
+        for i in range(N):
+            cc_p, cc_lbl, _ = CC_neg[i]
+            mlo_p, mlo_lbl, _ = MLO_neg[i]
+
+            neg_cc.append(self.load(cc_p))
+            neg_mlo.append(self.load(mlo_p))
+            neg_cc_lbl.append(cc_lbl)
+            neg_mlo_lbl.append(mlo_lbl)
+
+        # ----------------------------------------------
+        # merge
+        # ----------------------------------------------
+        cc_imgs = torch.stack(pos_cc + neg_cc)
+        mlo_imgs = torch.stack(pos_mlo + neg_mlo)
+
+        match_labels = torch.tensor([1]*K + [0]*N, dtype=torch.float32)
+        cc_labels = torch.tensor(pos_cc_lbl + neg_cc_lbl)
+        mlo_labels = torch.tensor(pos_mlo_lbl + neg_mlo_lbl)
+
+        return (
+            (cc_imgs, mlo_imgs),
+            (match_labels, cc_labels, mlo_labels)
+        )
 
 
 def siamese_collate(batch):
@@ -284,3 +330,7 @@ def siamese_collate(batch):
         torch.cat(cc_lbls),
         torch.cat(mlo_lbls)
     )
+
+def val_collate(batch):
+    # batch size = 1, so just return the first item
+    return batch[0]
