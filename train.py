@@ -279,7 +279,7 @@ if __name__ == "__main__":
         batch_size=1,
         shuffle=False,
         num_workers=4,
-        collate_fn=siamese_collate
+        collate_fn=val_collate
     )
 
     # Model
