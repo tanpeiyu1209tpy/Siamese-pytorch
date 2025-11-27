@@ -243,23 +243,28 @@ import re
 # --------------------------------------------------------
 def parse_patch_name(name):
     """
-    example:
-    050c2f6_CC_pred3_yolo10.png
-    return: image_id, view, pred_idx, yolo_idx
+    example filename:
+        050c2f6_CC_pred3_yolo10.png
+    returns:
+        (image_id, view, pred_idx, yolo_idx)
     """
     name = name.replace(".png", "")
+
     m = re.match(r"(.+?)_([A-Z]+)_pred(\d+)_yolo(\d+)", name)
     if not m:
+        print("❌ Cannot parse:", name)
         return None
+
     return (
-        m.group(1),             # image_id
-        m.group(2),             # view (CC / MLO)
-        int(m.group(3)),        # pred patch index
-        int(m.group(4))         # yolo line index
+        m.group(1),          # image_id
+        m.group(2),          # view (CC/MLO)
+        int(m.group(3)),     # patch index
+        int(m.group(4))      # YOLO line index
     )
 
+
 # --------------------------------------------------------
-# IoU function (YOLO format)
+# IoU (YOLO format)
 # --------------------------------------------------------
 def bbox_iou(box1, box2):
     x1_min = box1[0] - box1[2] / 2
@@ -287,8 +292,9 @@ def bbox_iou(box1, box2):
 
     return inter_area / union
 
+
 # --------------------------------------------------------
-# AP Calculation
+# Compute AP
 # --------------------------------------------------------
 def compute_ap(recall, precision):
     mrec = np.concatenate(([0.0], recall, [1.0]))
@@ -298,8 +304,8 @@ def compute_ap(recall, precision):
         mpre[i - 1] = max(mpre[i - 1], mpre[i])
 
     idx = np.where(mrec[1:] != mrec[:-1])[0]
-    ap = np.sum((mrec[idx + 1] - mrec[idx]) * mpre[idx + 1])
-    return ap
+    return np.sum((mrec[idx + 1] - mrec[idx]) * mpre[idx + 1])
+
 
 # --------------------------------------------------------
 # MAIN EVALUATION
@@ -308,12 +314,12 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
 
     df_sia = pd.read_csv(siamese_csv)
 
-    preds_by_class = {0:[], 1:[]}
+    preds_by_class = {0: [], 1: []}
 
-    print("🔍 Building final predictions...")
+    print("🔍 Extracting Siamese + YOLO fused predictions...")
+
     for _, row in df_sia.iterrows():
 
-        # CC + MLO 两个 patch 都当作 valid detection
         for patch_name, pred_class in [
             (row["CC_patch"], row["cc_pred_class"]),
             (row["MLO_patch"], row["mlo_pred_class"])
@@ -342,41 +348,43 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
             yolo_conf = float(conf)
             dist = float(row["distance"])
 
-            match_score = math.exp(-dist)     # 越相似越高
+            # Final (YOLO × Siamese)
+            match_score = math.exp(-dist)
             final_score = yolo_conf * match_score
 
             preds_by_class[pred_class].append(
                 (image_id, final_score, [float(xc), float(yc), float(w), float(h)])
             )
 
-    # -------------------------------
+    # --------------------------------------------------------
     # Load GT
-    # -------------------------------
+    # --------------------------------------------------------
     gt_by_class = {0: defaultdict(list), 1: defaultdict(list)}
 
     for fname in os.listdir(gt_dir):
-        if fname.endswith(".txt"):
-            img_id = fname.replace(".txt", "")
-            lines = open(os.path.join(gt_dir, fname)).read().strip().split("\n")
-            for line in lines:
-                parts = line.split()
-                cls = int(parts[0])
-                if cls in [0,1]:
-                    bbox = list(map(float, parts[1:5]))
-                    gt_by_class[cls][img_id].append({"bbox": bbox, "used": False})
+        if not fname.endswith(".txt"):
+            continue
+        img_id = fname.replace(".txt", "")
 
-    # -------------------------------
-    # Evaluate each class
-    # -------------------------------
+        lines = open(os.path.join(gt_dir, fname)).read().strip().split("\n")
+        for line in lines:
+            parts = line.split()
+            cls = int(parts[0])
+            if cls in [0, 1]:
+                bbox = list(map(float, parts[1:5]))
+                gt_by_class[cls][img_id].append({"bbox": bbox, "used": False})
+
+    # --------------------------------------------------------
+    # EVALUATION LOOP
+    # --------------------------------------------------------
     print("\n==============================")
-    print(" FINAL EVALUATION (YOLO Style)")
+    print("   FINAL EVALUATION (YOLO Style)")
     print("==============================\n")
     print(f"{'Class':<15}{'Instances':<12}{'P':<8}{'R':<8}{'mAP50':<10}{'mAP50-95'}")
 
-    for cls_id in [0,1]:
-
+    for cls_id in [0, 1]:
         preds = sorted(preds_by_class[cls_id], key=lambda x: x[1], reverse=True)
-        gts   = gt_by_class[cls_id]
+        gts = gt_by_class[cls_id]
         total_gt = sum(len(v) for v in gts.values())
 
         tp = np.zeros(len(preds))
@@ -390,6 +398,7 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
 
             ious = np.array([bbox_iou(pred_box, g["bbox"]) for g in gts[img_id]])
             best = np.argmax(ious)
+
             if ious[best] >= 0.5 and not gts[img_id][best]["used"]:
                 tp[i] = 1
                 gts[img_id][best]["used"] = True
@@ -403,22 +412,28 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
 
         ap50 = compute_ap(recall, precision)
 
-        # compute AP50-95
-        aps_all = []
+        # mAP50–95
+        aps = []
         for thr in np.arange(0.5, 0.96, 0.05):
+
             g_clone = defaultdict(list)
             for img, v in gts.items():
-                g_clone[img] = [ {"bbox": d["bbox"], "used": False} for d in v ]
+                g_clone[img] = [
+                    {"bbox": d["bbox"], "used": False} for d in v
+                ]
 
             tp2 = np.zeros(len(preds))
             fp2 = np.zeros(len(preds))
 
             for i, (img_id, score, pred_box) in enumerate(preds):
+
                 if img_id not in g_clone:
                     fp2[i] = 1
                     continue
+
                 ious = np.array([bbox_iou(pred_box, g["bbox"]) for g in g_clone[img_id]])
                 best = np.argmax(ious)
+
                 if ious[best] >= thr and not g_clone[img_id][best]["used"]:
                     tp2[i] = 1
                     g_clone[img_id][best]["used"] = True
@@ -427,12 +442,31 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
 
             r = np.cumsum(tp2) / (total_gt + 1e-16)
             p = np.cumsum(tp2) / (np.cumsum(tp2) + np.cumsum(fp2) + 1e-16)
-            aps_all.append(compute_ap(r, p))
+            aps.append(compute_ap(r, p))
 
-        ap5095 = np.mean(aps_all)
+        ap5095 = np.mean(aps)
 
         cname = "Mass" if cls_id == 0 else "Suspicious_Calcification"
-        P = precision[-1] if len(precision)>0 else 0
-        R = recall[-1] if len(recall)>0 else 0
+        P = precision[-1] if len(precision) else 0
+        R = recall[-1] if len(recall) else 0
 
         print(f"{cname:<15}{total_gt:<12}{P:<8.3f}{R:<8.3f}{ap50:<10.3f}{ap5095:.3f}")
+
+
+# --------------------------------------------------------
+# ENTRY POINT
+# --------------------------------------------------------
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Evaluate Siamese + YOLO Fusion")
+
+    parser.add_argument("--gt_dir", type=str, required=True)
+    parser.add_argument("--yolo_pred_dir", type=str, required=True)
+    parser.add_argument("--siamese_csv", type=str, required=True)
+
+    args = parser.parse_args()
+
+    evaluate(
+        gt_dir=args.gt_dir,
+        yolo_pred_dir=args.yolo_pred_dir,
+        siamese_csv=args.siamese_csv
+    )
