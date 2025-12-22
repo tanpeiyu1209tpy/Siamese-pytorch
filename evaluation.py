@@ -11,19 +11,20 @@ import re
 # ============================
 def parse_patch_name(name):
     """
-    imageid_CC_pred3_yolo10.png
-    return: image_id, pred_idx, yolo_idx
+    012e0595adba5173b6e60a97f9e84b6e_L_CC_8.jpg
+    return:
+        gt_image_id = 012e0595adba5173b6e60a97f9e84b6e_L_CC
+        idx = 8
     """
-    name = name.replace(".png", "")
-
-    m = re.match(r"(.+?)_[A-Z]+_pred(\d+)_yolo(\d+)", name)
+    name = name.replace(".jpg", "").replace(".png", "")
+    m = re.match(r"(.*)_([LR])_(CC|MLO)_(\d+)", name)
     if not m:
         return None
-    return (
-        m.group(1),      # image_id
-        int(m.group(2)), # pred index
-        int(m.group(3))  # yolo line index
-    )
+
+    image_id = f"{m.group(1)}_{m.group(2)}_{m.group(3)}"
+    idx = int(m.group(4))
+    return image_id, idx
+
 
 
 # ============================
@@ -95,15 +96,11 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
             parsed = parse_patch_name(patch_name)
             if parsed is None:
                 continue
-
-            image_id, pred_idx, yolo_idx = parsed
-
-            txt_path = os.path.join(yolo_pred_dir, f"{image_id}.txt")
+            
+            gt_image_id, yolo_idx = parsed
+            
+            txt_path = os.path.join(yolo_pred_dir, f"{patch_name.replace('.jpg','.txt')}")
             if not os.path.exists(txt_path):
-                continue
-
-            lines = open(txt_path).read().strip().split("\n")
-            if yolo_idx >= len(lines):
                 continue
 
             parts = lines[yolo_idx].split()
@@ -117,8 +114,9 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
             final_score = float(conf) * match_score
 
             preds_by_class[pred_class].append(
-                (image_id, final_score, [float(xc), float(yc), float(w), float(h)])
+                (gt_image_id, final_score, [float(xc), float(yc), float(w), float(h)])
             )
+
 
     # ============================
     # Load GT
@@ -165,7 +163,7 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
             ])
             best = np.argmax(ious)
 
-            if ious[best] >= 0.01 and not gts[img_id][best]["used"]:
+            if ious[best] >= 0.5 and not gts[img_id][best]["used"]:
                 tp[i] = 1
                 gts[img_id][best]["used"] = True
             else:
