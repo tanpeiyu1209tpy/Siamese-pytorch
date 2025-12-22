@@ -137,7 +137,7 @@ def validate_joint(model, loader, device,
             total_mlo_correct += (mlo_pred == mlo_label).sum().item()
 
     return (
-        total_loss / total_pairs
+        total_loss / total_pairs,
         total_match_correct / total_pairs,
         total_cc_correct / total_pairs,
         total_mlo_correct / total_pairs,
