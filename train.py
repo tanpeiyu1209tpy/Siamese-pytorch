@@ -88,6 +88,7 @@ def validate_joint(model, loader, device,
                    margin):
 
     model.eval()
+    printed=False
 
     total_loss = 0
     total_match_correct = 0
@@ -110,7 +111,14 @@ def validate_joint(model, loader, device,
 
             # forward all 10 samples (5 pos, 5 neg)
             dist, cc_logits, mlo_logits = model((cc_batch, mlo_batch))
-
+            if not printed:
+                print(
+                    "[DEBUG] dist stats:",
+                    "min =", dist.min().item(),
+                    "mean =", dist.mean().item(),
+                    "max =", dist.max().item()
+                )
+                printed = True
             threshold = dist.mean()
 
             # compute loss
@@ -208,7 +216,7 @@ def get_args():
                         help="CC classification loss weight")
     parser.add_argument("--beta", type=float, default=1.0,
                         help="MLO classification loss weight")
-    parser.add_argument("--gamma", type=float, default=0.2,
+    parser.add_argument("--gamma", type=float, default=0.1,
                         help="Contrastive loss weight")
 
     return parser.parse_args()
@@ -321,11 +329,11 @@ if __name__ == "__main__":
     for epoch in range(1, epochs + 1):
 
         if epoch == 1:
-            optimizer.param_groups[0]['lr'] = 0.01
-        elif epoch == 40:
-            optimizer.param_groups[0]['lr'] = 0.005
-        elif epoch == 80:
             optimizer.param_groups[0]['lr'] = 0.001
+        elif epoch == 40:
+            optimizer.param_groups[0]['lr'] = 0.0005
+        elif epoch == 80:
+            optimizer.param_groups[0]['lr'] = 0.0001
         
         current_lr = optimizer.param_groups[0]['lr']
         print(f"[LR] Current learning rate: {current_lr}")
