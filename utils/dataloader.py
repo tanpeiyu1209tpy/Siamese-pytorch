@@ -229,7 +229,7 @@ class SiameseDatasetVal(Dataset):
 
         # -------- negative pairs (fixed) --------
         for i in range(self.K):
-            cc_path, cc_lbl = v["CC_pos"][i]
+            cc_path, cc_lbl = v["CC_neg"][i]
             mlo_path, mlo_lbl = v["MLO_neg"][i]
 
             cc_imgs.append(self.load_image(cc_path))
