@@ -27,7 +27,7 @@ def parse_filename(fname):
 # ===============================================================
 # NEW CMCNet Dataset – FINAL FIX
 # ===============================================================
-class SiameseDatasetTrain(Dataset):
+class SiameseDataset(Dataset):
     def __init__(self, root_dir, input_size=(64, 64), K=5):
         print("📌 Using SiameseDatasetTrain (K-pair sampling)")
 
