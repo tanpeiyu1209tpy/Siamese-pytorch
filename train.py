@@ -319,11 +319,11 @@ if __name__ == "__main__":
     for epoch in range(1, epochs + 1):
 
         if epoch == 1:
-            optimizer.param_groups[0]['lr'] = 0.001
+            optimizer.param_groups[0]['lr'] = 0.01
         elif epoch == 40:
-            optimizer.param_groups[0]['lr'] = 0.0005
+            optimizer.param_groups[0]['lr'] = 0.005
         elif epoch == 80:
-            optimizer.param_groups[0]['lr'] = 0.0001
+            optimizer.param_groups[0]['lr'] = 0.001
         
         current_lr = optimizer.param_groups[0]['lr']
         print(f"[LR] Current learning rate: {current_lr}")
