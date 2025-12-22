@@ -56,7 +56,8 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
     model.eval()
 
     rows = []
-
+    patients_cc  = set(os.listdir(cc_dir))
+    patients_mlo = set(os.listdir(mlo_dir))
     patients = sorted(os.listdir(cc_dir))
     print(f"📌 Found {len(patients)} patient-sides")
 
