@@ -144,9 +144,9 @@ def validate_joint(model, loader, device,
             # -------------------------
             # Compute accuracy
             # -------------------------
-            threshold = 1
-            pred_match = (dist < threshold).long()
-            total_match_correct += (pred_match == match_label).sum().item()
+            #threshold = 1
+            #pred_match = (dist < threshold).long()
+            #total_match_correct += (pred_match == match_label).sum().item()
 
             cc_pred = torch.argmax(cc_logits, dim=1)
             mlo_pred = torch.argmax(mlo_logits, dim=1)
@@ -156,7 +156,6 @@ def validate_joint(model, loader, device,
 
     return (
         total_loss / total_pairs,
-        total_match_correct / total_pairs,
         total_cc_correct / total_pairs,
         total_mlo_correct / total_pairs,
     )
