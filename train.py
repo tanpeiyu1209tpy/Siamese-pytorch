@@ -177,7 +177,6 @@ def plot_history(history, save_dir):
 
     # --- 2. Accuracy Plot ---
     plt.figure(figsize=(12, 5))
-    plt.plot(epochs, history["match_acc"], 'g', label='Match Accuracy (Contrastive)')
     plt.plot(epochs, history["cc_acc"], 'm', label='CC Class. Accuracy')
     plt.plot(epochs, history["mlo_acc"], 'c', label='MLO Class. Accuracy')
     plt.title('Validation Accuracies for Three Tasks')
@@ -325,7 +324,6 @@ if __name__ == "__main__":
     history = {
         "train_loss": [],
         "val_loss": [],
-        "match_acc": [],
         "cc_acc": [],
         "mlo_acc": []
     }
@@ -360,7 +358,6 @@ if __name__ == "__main__":
 
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
-        history["match_acc"].append(match_acc)
         history["cc_acc"].append(cc_acc)
         history["mlo_acc"].append(mlo_acc)
 
@@ -368,7 +365,6 @@ if __name__ == "__main__":
         print(f"Epoch {epoch}/{epochs}")
         print(f"Train Loss      : {train_loss:.4f}")
         print(f"Val Total Loss  : {val_loss:.4f}")
-        print(f"Match Accuracy  : {match_acc:.4f}")
         print(f"CC Accuracy     : {cc_acc:.4f}")
         print(f"MLO Accuracy    : {mlo_acc:.4f}")
         print("------------------------------\n")
