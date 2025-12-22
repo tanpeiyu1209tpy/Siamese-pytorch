@@ -12,7 +12,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from nets.cmcnet import CMCNet
-from utils.dataloader_new import SiameseDataset, siamese_collate,SiameseDatasetVal, val_collate
+from utils.dataloader import SiameseDatasetTrain, siamese_collate,SiameseDatasetVal, val_collate
 from torch.optim.lr_scheduler import StepLR
 
 
