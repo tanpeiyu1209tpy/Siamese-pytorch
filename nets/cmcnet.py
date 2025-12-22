@@ -3,117 +3,111 @@
 # ==========================================================
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision.models import vgg16, VGG16_Weights
 
 
 class CMCNet(nn.Module):
     """
     Combined Matching and Classification Network (CMCNet)
-    论文: Yan et al., "Multi-tasking Siamese Networks for Breast Mass Detection
-          Using Dual-View Mammogram Matching", MLMI 2020.
+    Yan et al., "Multi-tasking Siamese Networks for Breast Mass Detection
+    Using Dual-View Mammogram Matching", MLMI 2020
     """
     def __init__(self, input_channels=3, num_classes=3, pretrained=True):
-        super(CMCNet, self).__init__()
+        super().__init__()
 
-        # 1. VGG16 Backbone -------------------------------------------
+        # --------------------------------------------------
+        # 1. VGG16 backbone (shared)
+        # --------------------------------------------------
         if pretrained:
-            weights = VGG16_Weights.IMAGENET1K_V1
-            vgg = vgg16(weights=weights)
+            vgg = vgg16(weights=VGG16_Weights.IMAGENET1K_V1)
         else:
             vgg = vgg16(weights=None)
 
+        # ⚠️ Only replace first conv if NOT RGB
         if input_channels != 3:
-            vgg.features[0] = nn.Conv2d(input_channels, 64, kernel_size=3, padding=1)
+            vgg.features[0] = nn.Conv2d(
+                input_channels, 64, kernel_size=3, padding=1, bias=True
+            )
+            nn.init.kaiming_normal_(
+                vgg.features[0].weight, mode="fan_out", nonlinearity="relu"
+            )
 
         self.features = vgg.features
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        flat_dim = 512
+        self.flat_dim = 512
 
-        # 2. Classification Heads -------------------------------------
+        # --------------------------------------------------
+        # 2. Classification heads (CC / MLO)
+        # --------------------------------------------------
         self.cls_head_cc = nn.Sequential(
-            nn.Linear(flat_dim, 512),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
-            nn.Linear(512, num_classes)
-        )
-        self.cls_head_mlo = nn.Sequential(
-            nn.Linear(flat_dim, 512),
+            nn.Linear(self.flat_dim, 512),
             nn.ReLU(inplace=True),
             nn.Dropout(0.3),
             nn.Linear(512, num_classes)
         )
 
-        # 3. Metric Head (用于匹配任务的特征映射) -----------------------
-        # Metric Network 如图3-B所示，在匹配任务中用于学习特征空间的映射
-        self.metric_head = nn.Sequential(
-            nn.Linear(flat_dim, 512),
+        self.cls_head_mlo = nn.Sequential(
+            nn.Linear(self.flat_dim, 512),
             nn.ReLU(inplace=True),
-            # 最后一个线性层将特征映射回特征空间（可选降维）
-            nn.Linear(512, flat_dim) 
+            nn.Dropout(0.3),
+            nn.Linear(512, num_classes)
+        )
+
+        # --------------------------------------------------
+        # 3. Metric head (shared Siamese mapping)
+        # --------------------------------------------------
+        self.metric_head = nn.Sequential(
+            nn.Linear(self.flat_dim, 512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, self.flat_dim)
         )
 
     def forward(self, x):
         """
         Args:
-            x: tuple(img_cc, img_mlo)
-               - img_cc : (B, C, H, W)
-               - img_mlo: (B, C, H, W)
+            x: (img_cc, img_mlo)
+               img_cc : (B, C, H, W)
+               img_mlo: (B, C, H, W)
         Returns:
-            distance:  (B,)   欧氏距离 (用于 ContrastiveLoss)
-            logits_cc: (B,C)  CC 分类输出
-            logits_mlo:(B,C)  MLO 分类输出
+            distance : (B,)
+            logits_cc: (B, num_classes)
+            logits_mlo:(B, num_classes)
         """
         img_cc, img_mlo = x
 
-        # --- Feature extraction (shared weights) ---
-        f1 = self.features(img_cc)
-        f2 = self.features(img_mlo)
-        f1 = self.avgpool(f1)
-        f2 = self.avgpool(f2)
-        #f1 = torch.flatten(f1, 1)
-        #f2 = torch.flatten(f2, 1)
+        # --- Shared feature extraction ---
+        f_cc = self.avgpool(self.features(img_cc))
+        f_mlo = self.avgpool(self.features(img_mlo))
 
-        # --- L2 Distance for contrastive loss ---
-        #distance = torch.norm(f1 - f2, p=2, dim=1)
+        f_cc = torch.flatten(f_cc, 1)   # (B, 512)
+        f_mlo = torch.flatten(f_mlo, 1) # (B, 512)
 
-        # --- Classification branches ---
-        #logits_cc = self.cls_head_cc(f1)
-        #logits_mlo = self.cls_head_mlo(f2)
+        # --- Classification ---
+        logits_cc = self.cls_head_cc(f_cc)
+        logits_mlo = self.cls_head_mlo(f_mlo)
 
+        # --- Metric learning ---
+        z_cc = self.metric_head(f_cc)
+        z_mlo = self.metric_head(f_mlo)
 
+        # (optional but recommended) L2 normalization
+        z_cc = F.normalize(z_cc, p=2, dim=1)
+        z_mlo = F.normalize(z_mlo, p=2, dim=1)
 
-        f1 = torch.flatten(f1, 1) # (B, 512)
-        f2 = torch.flatten(f2, 1) # (B, 512)
-
-        # --- Classification branches (使用原始特征) ---
-        logits_cc = self.cls_head_cc(f1)
-        logits_mlo = self.cls_head_mlo(f2)
-        
-        # --- L2 Distance for contrastive loss (使用 Metric Network 映射后的特征) ---
-        # 映射特征
-        f1_mapped = self.metric_head(f1)
-        f2_mapped = self.metric_head(f2)
-        
-        # 计算距离
-        distance = torch.norm(f1_mapped - f2_mapped, p=2, dim=1) 
-
-        # --- Classification branches (保持不变) ---
-        # logits_cc = self.cls_head_cc(f1) # <-- 现在放在 distance 计算前了
-        # logits_mlo = self.cls_head_mlo(f2) # <-- 现在放在 distance 计算前了
-
-        return distance, logits_cc, logits_mlo
-
-        
+        distance = torch.norm(z_cc - z_mlo, p=2, dim=1)
 
         return distance, logits_cc, logits_mlo
 
 
-# ---------- Quick unit test ----------
+# --------------------------------------------------
+# Quick sanity check
+# --------------------------------------------------
 if __name__ == "__main__":
     model = CMCNet(input_channels=3, num_classes=4, pretrained=False)
-    cc = torch.randn(8, 3, 64, 64)
-    mlo = torch.randn(8, 3, 64, 64)
+    cc = torch.randn(8, 3, 128, 128)
+    mlo = torch.randn(8, 3, 128, 128)
     d, cc_out, mlo_out = model((cc, mlo))
-    print("distance:", d.shape)        # (8,)
-    print("cc_out:", cc_out.shape)     # (8,4)
-    print("mlo_out:", mlo_out.shape)   # (8,4)
+    print("distance:", d.shape)
+    print("cc_out:", cc_out.shape)
+    print("mlo_out:", mlo_out.shape)
