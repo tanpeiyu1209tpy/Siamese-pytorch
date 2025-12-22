@@ -369,6 +369,8 @@ class SiameseDatasetTrain(Dataset):
                 self.calc_pids.append(pid)
 
         print(f"✔ Loaded {len(self.valid_ids)} training patient-sides")
+        print("Mass pids:", len(self.mass_pids))
+        print("Calc pids:", len(self.calc_pids))
 
         # augmentation (train only)
         self.to_tensor = transforms.Compose([
@@ -498,6 +500,9 @@ class SiameseDatasetVal(Dataset):
                 self.calc_pids.append(pid)
 
         print(f"✔ Loaded {len(self.valid_ids)} validation patient-sides")
+        print("Mass pids:", len(self.mass_pids))
+        print("Calc pids:", len(self.calc_pids))
+
 
         self.to_tensor = transforms.Compose([
             transforms.Resize(input_size),
