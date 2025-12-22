@@ -54,13 +54,14 @@ class CMCNet(nn.Module):
             nn.Linear(512, num_classes)
         )
 
+        self.embed_dim = 128
         # --------------------------------------------------
         # 3. Metric head (shared Siamese mapping)
         # --------------------------------------------------
         self.metric_head = nn.Sequential(
-            nn.Linear(self.flat_dim, 512),
+            nn.Linear(self.flat_dim, 256),
             nn.ReLU(inplace=True),
-            nn.Linear(512, self.flat_dim)
+            nn.Linear(256, self.embed_dim)
         )
 
     def forward(self, x):
