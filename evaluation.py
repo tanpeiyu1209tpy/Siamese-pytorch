@@ -99,12 +99,19 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
             
             gt_image_id, yolo_idx = parsed
             
-            txt_path = os.path.join(yolo_pred_dir, f"{patch_name.replace('.jpg','.txt')}")
+            txt_path = os.path.join(
+                yolo_pred_dir,
+                patch_name.replace(".jpg", ".txt").replace(".png", ".txt")
+            )
             if not os.path.exists(txt_path):
                 continue
-
-            parts = lines[yolo_idx].split()
+            
+            with open(txt_path, "r") as f:
+                line = f.readline().strip()
+            
+            parts = line.split()
             _, xc, yc, w, h, conf = parts
+
 
             # Siamese distance
             dist = float(row["distance"])
