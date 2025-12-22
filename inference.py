@@ -58,7 +58,7 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
     rows = []
     patients_cc  = set(os.listdir(cc_dir))
     patients_mlo = set(os.listdir(mlo_dir))
-    patients = sorted(os.listdir(cc_dir))
+    patients = sorted(patients_cc & patients_mlo)
     print(f"📌 Found {len(patients)} patient-sides")
 
     for p in patients:
