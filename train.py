@@ -2,6 +2,7 @@
 # train_cmcnet.py — Final Clean Version (Correct CMCNet Training)
 # Multi-task: Matching + CC Classification + MLO Classification
 # ==========================================================
+import argparse
 
 import os
 import torch
@@ -136,7 +137,7 @@ def validate_joint(model, loader, device,
             total_mlo_correct += (mlo_pred == mlo_label).sum().item()
 
     return (
-        total_loss / total_pairst
+        total_loss / total_pairs
         total_match_correct / total_pairs,
         total_cc_correct / total_pairs,
         total_mlo_correct / total_pairs,
@@ -171,21 +172,62 @@ def plot_history(history, save_dir):
     plt.close()
 
     print(f"\n[INFO] Plots saved to {save_dir}/")
-    
+
+def get_args():
+    parser = argparse.ArgumentParser("CMCNet Siamese Training")
+
+    # ---------------- Paths ----------------
+    parser.add_argument("--train-dir", type=str, required=True,
+                        help="Path to siamese training dataset")
+    parser.add_argument("--val-dir", type=str, required=True,
+                        help="Path to siamese validation dataset")
+    parser.add_argument("--save-dir", type=str, default="cmcnet_logs")
+
+    # ---------------- Model ----------------
+    parser.add_argument("--input-size", type=int, default=128)
+    parser.add_argument("--num-classes", type=int, default=3)
+    parser.add_argument("--pretrained", action="store_true",
+                        help="Use ImageNet pretrained backbone")
+
+    # ---------------- Training ----------------
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--momentum", type=float, default=0.9)
+    parser.add_argument("--num-workers", type=int, default=4)
+
+    # ---------------- Siamese ----------------
+    parser.add_argument("--K", type=int, default=5,
+                        help="Number of positive / negative pairs per patient")
+    parser.add_argument("--margin", type=float, default=5.0)
+
+    # ---------------- Loss Weights ----------------
+    parser.add_argument("--alpha", type=float, default=1.0,
+                        help="CC classification loss weight")
+    parser.add_argument("--beta", type=float, default=1.0,
+                        help="MLO classification loss weight")
+    parser.add_argument("--gamma", type=float, default=0.2,
+                        help="Contrastive loss weight")
+
+    return parser.parse_args()
+
 # ------------------------------------------------------
 # Main Training Loop
 # ------------------------------------------------------
 if __name__ == "__main__":
 
-    train_dir = "/kaggle/input/sia128/siamese128/train"
-    val_dir   = "/kaggle/input/sia128/siamese128/val"
+    args = get_args()
 
-    input_size = (128, 128)
-    num_classes = 3
-    epochs = 100
-    batch_size = 32
-    lr = 0.001
-    margin = 5.0   # ✔ use consistent margin everywhere
+    train_dir = args.train_dir
+    val_dir   = args.val_dir
+    save_dir  = args.save_dir
+
+    input_size = (args.input_size, args.input_size)
+    epochs = args.epochs
+    batch_size = args.batch_size
+    lr = args.lr
+    margin = args.margin
+
 
     save_dir = "cmcnet_logs"
     os.makedirs(save_dir, exist_ok=True)
@@ -208,14 +250,14 @@ if __name__ == "__main__":
     print("\n[INFO] Loading dataset...")
 
     # NEW DATASET (CMCNet version)
-    train_dataset = SiameseDatasetTrain(train_dir, input_size=input_size, K=5)
-    val_dataset   = SiameseDatasetVal(val_dir, input_size)
+    train_dataset = SiameseDatasetTrain(train_dir, input_size=input_size, K=args.K)
+    val_dataset   = SiameseDatasetVal(val_dir, input_size=input_size, K=args.K)
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=batch_size,
+        batch_size=args.batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=args.num_workers,
         collate_fn=siamese_collate,
         drop_last=True
     )
@@ -224,7 +266,7 @@ if __name__ == "__main__":
         val_dataset,
         batch_size=1,
         shuffle=False,
-        num_workers=4,
+        num_workers=args.num_workers,
         collate_fn=siamese_collate
     )
 
@@ -232,7 +274,7 @@ if __name__ == "__main__":
 
     #resume_path = "cmcnet_logs/best_model.pth"
     resume_path = None
-    model = CMCNet(input_channels=3, num_classes=num_classes, pretrained=True)
+    model = CMCNet(input_channels=3, num_classes=args.num_classes, pretrained=args.pretrained)
     model.to(device)
     
     
@@ -255,7 +297,7 @@ if __name__ == "__main__":
     #ce_loss = nn.CrossEntropyLoss()
     #contrastive = ContrastiveLoss(margin)
 
-    weights = {"alpha": 1.0, "beta": 1.0, "gamma": 0.2}
+    weights = {"alpha": args.alpha, "beta": args.beta, "gamma": args.gamma}
     #optimizer = optim.Adam(model.parameters(), lr=lr)
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
 
