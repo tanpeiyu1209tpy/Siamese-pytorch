@@ -12,7 +12,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from nets.cmcnet import CMCNet
-from utils.dataloader import SiameseDatasetTrain, siamese_collate,SiameseDatasetVal, val_collate
+from utils.dataloader import SiameseDatasetTrain, siamese_collate,SiameseDatasetVal
 from torch.optim.lr_scheduler import StepLR
 
 
@@ -82,60 +82,6 @@ def train_one_epoch(model, loader, optimizer, device,
 # ------------------------------------------------------
 # Validation Function
 # ------------------------------------------------------
-'''
-def validate_joint(model, loader, device,
-                   contrastive_loss, ce_loss, weights,
-                   margin):
-
-    model.eval()
-
-    total_loss = 0
-    match_correct = 0
-    total_samples = 0
-    cc_correct = 0
-    mlo_correct = 0
-
-    threshold = margin / 2.0   # matching 判定阈值
-
-    with torch.no_grad():
-        for (cc, mlo), (match_label, cc_label, mlo_label) in loader:
-
-            cc, mlo = cc.to(device), mlo.to(device)
-            match_label = match_label.to(device)
-            cc_label = cc_label.to(device)
-            mlo_label = mlo_label.to(device)
-
-            dist, cc_logits, mlo_logits = model((cc, mlo))
-
-            loss_m = contrastive_loss(dist, match_label)
-            loss_cc = ce_loss(cc_logits, cc_label)
-            loss_mlo = ce_loss(mlo_logits, mlo_label)
-
-            loss = (weights["gamma"] * loss_m +
-                    weights["alpha"] * loss_cc +
-                    weights["beta"] * loss_mlo)
-            total_loss += loss.item()
-
-            # Matching accuracy
-            pred_match = (dist < threshold).long()
-            match_correct += (pred_match == match_label).sum().item()
-
-            # Classification accuracy
-            cc_pred = torch.argmax(cc_logits, dim=1)
-            mlo_pred = torch.argmax(mlo_logits, dim=1)
-
-            cc_correct += (cc_pred == cc_label).sum().item()
-            mlo_correct += (mlo_pred == mlo_label).sum().item()
-
-            total_samples += cc.size(0)
-
-    return (
-        total_loss / len(loader),
-        match_correct / total_samples,
-        cc_correct / total_samples,
-        mlo_correct / total_samples
-    )
-'''
 def validate_joint(model, loader, device,
                    contrastive_loss, ce_loss, weights,
                    margin):
@@ -173,7 +119,9 @@ def validate_joint(model, loader, device,
                     weights["alpha"] * loss_cc +
                     weights["beta"] * loss_mlo)
 
-            total_loss += loss.item()
+            num_pairs = match_label.size(0)
+            total_loss += loss.item() * num_pairs
+            total_pairs += num_pairs
 
             # -------------------------
             # Compute accuracy
@@ -187,10 +135,8 @@ def validate_joint(model, loader, device,
             total_cc_correct += (cc_pred == cc_label).sum().item()
             total_mlo_correct += (mlo_pred == mlo_label).sum().item()
 
-            total_pairs += match_label.size(0)
-
     return (
-        total_loss / len(loader),
+        total_loss / total_pairst
         total_match_correct / total_pairs,
         total_cc_correct / total_pairs,
         total_mlo_correct / total_pairs,
@@ -262,8 +208,7 @@ if __name__ == "__main__":
     print("\n[INFO] Loading dataset...")
 
     # NEW DATASET (CMCNet version)
-    train_dataset = SiameseDataset(train_dir, input_size, random_flag=True)
-    #val_dataset   = SiameseDataset(val_dir, input_size, random_flag=False)
+    train_dataset = SiameseDatasetTrain(train_dir, input_size=input_size, K=5)
     val_dataset   = SiameseDatasetVal(val_dir, input_size)
 
     train_loader = DataLoader(
@@ -280,7 +225,7 @@ if __name__ == "__main__":
         batch_size=1,
         shuffle=False,
         num_workers=4,
-        collate_fn=val_collate
+        collate_fn=siamese_collate
     )
 
     # Model
