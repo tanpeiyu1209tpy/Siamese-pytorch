@@ -352,7 +352,7 @@ if __name__ == "__main__":
             epoch, epochs
         )
 
-        val_loss, match_acc, cc_acc, mlo_acc = validate_joint(
+        val_loss, cc_acc, mlo_acc = validate_joint(
             model, val_loader, device,
             contrastive, ce_loss, weights,
             margin=margin
