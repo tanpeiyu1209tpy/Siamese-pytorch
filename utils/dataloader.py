@@ -8,39 +8,39 @@ from torchvision import transforms
 
 
 # ===============================================================
-# Parse filename: <pid>_<side>_<view>_(pos|neg)<idx>.png
+# filename: <pid>_<side>_<view>_(pos|neg)<idx>.png
 # ===============================================================
 def parse_filename(fname):
     pattern = r"^(.*?)_([LR])_(CC|MLO)_(pos|neg)_?(\d+)\.png$"
-
     m = re.match(pattern, fname)
     if m:
         return {
             "patient_id": m.group(1),
             "side": m.group(2),
             "view": m.group(3),
-            "patch_type": m.group(4),   # pos / neg
+            "patch_type": m.group(4),
             "idx": int(m.group(5))
         }
     return None
 
+
 # ===============================================================
-# NEW CMCNet Dataset – FINAL FIX
+# TRAIN DATASET (paper-exact)
 # ===============================================================
 class SiameseDatasetTrain(Dataset):
-    def __init__(self, root_dir, input_size=(128,128), K=5):
+    def __init__(self, root_dir, input_size=(128, 128), K=5):
         print("📌 Using SiameseDatasetTrain (YOLO-FP intra-patient matching)")
 
         self.K = K
         self.class_map = {
             "Mass": 0,
             "Suspicious_Calcification": 1,
-            "Negative": 2   # YOLO FP
+            "Negative": 2
         }
 
         self.data = {}
 
-        # -------- scan folders --------
+        # ---------- scan ----------
         for cls in ["Mass", "Suspicious_Calcification", "Negative"]:
             cls_dir = os.path.join(root_dir, cls)
             if not os.path.exists(cls_dir):
@@ -61,9 +61,9 @@ class SiameseDatasetTrain(Dataset):
 
                 if cls == "Negative":
                     if info["view"] == "CC":
-                        self.data[pid]["CC_fp"].append((path, 2))
+                        self.data[pid]["CC_fp"].append(path)
                     else:
-                        self.data[pid]["MLO_fp"].append((path, 2))
+                        self.data[pid]["MLO_fp"].append(path)
                 else:
                     lbl = self.class_map[cls]
                     if info["view"] == "CC":
@@ -71,7 +71,7 @@ class SiameseDatasetTrain(Dataset):
                     else:
                         self.data[pid]["MLO_pos"].append((path, lbl))
 
-        # -------- valid ids --------
+        # ---------- valid ids ----------
         self.valid_ids = [
             pid for pid, v in self.data.items()
             if len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0
@@ -85,7 +85,8 @@ class SiameseDatasetTrain(Dataset):
             transforms.RandomHorizontalFlip(),
             transforms.RandomResizedCrop(input_size),
             transforms.ToTensor(),
-            transforms.Normalize([0.485]*3, [0.229]*3)
+            transforms.Normalize([0.485, 0.456, 0.406],
+                                 [0.229, 0.224, 0.225])
         ])
 
     def __len__(self):
@@ -98,7 +99,7 @@ class SiameseDatasetTrain(Dataset):
         cc_imgs, mlo_imgs = [], []
         match, cc_lbl, mlo_lbl = [], [], []
 
-        # -------- Positive: lesion ↔ lesion --------
+        # ===== POSITIVE: lesion ↔ lesion =====
         for _ in range(self.K):
             cc_p, cc_l = random.choice(v["CC_pos"])
             mlo_p, mlo_l = random.choice(v["MLO_pos"])
@@ -110,13 +111,15 @@ class SiameseDatasetTrain(Dataset):
             cc_lbl.append(cc_l)
             mlo_lbl.append(mlo_l)
 
-        # -------- Negative: lesion ↔ YOLO FP --------
+        # ===== NEGATIVE: lesion ↔ YOLO FP =====
         for _ in range(self.K):
             if len(v["MLO_fp"]) > 0:
                 cc_p, cc_l = random.choice(v["CC_pos"])
-                mlo_p, mlo_l = random.choice(v["MLO_fp"])
+                mlo_p = random.choice(v["MLO_fp"])
+                mlo_l = 2
             else:
-                cc_p, cc_l = random.choice(v["CC_fp"])
+                cc_p = random.choice(v["CC_fp"])
+                cc_l = 2
                 mlo_p, mlo_l = random.choice(v["MLO_pos"])
 
             cc_imgs.append(self.tf(Image.open(cc_p).convert("RGB")))
@@ -130,20 +133,23 @@ class SiameseDatasetTrain(Dataset):
             torch.stack(cc_imgs),
             torch.stack(mlo_imgs)
         ), (
-            torch.tensor(match),
-            torch.tensor(cc_lbl),
-            torch.tensor(mlo_lbl)
+            torch.tensor(match, dtype=torch.float32),
+            torch.tensor(cc_lbl, dtype=torch.long),
+            torch.tensor(mlo_lbl, dtype=torch.long)
         )
 
 
+# ===============================================================
+# VAL DATASET (fixed, deterministic)
+# ===============================================================
 class SiameseDatasetVal(Dataset):
-    def __init__(self, root_dir, input_size=(128,128), K=5):
+    def __init__(self, root_dir, input_size=(128, 128), K=5):
         print("📌 Using SiameseDatasetVal (fixed YOLO-FP matching)")
         self.K = K
-        self.class_map = {"Mass":0,"Suspicious_Calcification":1,"Negative":2}
+        self.class_map = {"Mass": 0, "Suspicious_Calcification": 1, "Negative": 2}
         self.data = {}
 
-        for cls in ["Mass","Suspicious_Calcification","Negative"]:
+        for cls in ["Mass", "Suspicious_Calcification", "Negative"]:
             cls_dir = os.path.join(root_dir, cls)
             if not os.path.exists(cls_dir):
                 continue
@@ -154,29 +160,29 @@ class SiameseDatasetVal(Dataset):
                     continue
 
                 pid = f"{info['patient_id']}_{info['side']}"
-                self.data.setdefault(pid,{
-                    "CC_pos":[], "MLO_pos":[],
-                    "CC_fp":[],  "MLO_fp":[]
+                self.data.setdefault(pid, {
+                    "CC_pos": [], "MLO_pos": [],
+                    "CC_fp": [],  "MLO_fp": []
                 })
 
                 path = os.path.join(cls_dir, fname)
 
-                if cls=="Negative":
-                    if info["view"]=="CC":
-                        self.data[pid]["CC_fp"].append((path,2))
+                if cls == "Negative":
+                    if info["view"] == "CC":
+                        self.data[pid]["CC_fp"].append(path)
                     else:
-                        self.data[pid]["MLO_fp"].append((path,2))
+                        self.data[pid]["MLO_fp"].append(path)
                 else:
-                    lbl=self.class_map[cls]
-                    if info["view"]=="CC":
-                        self.data[pid]["CC_pos"].append((path,lbl))
+                    lbl = self.class_map[cls]
+                    if info["view"] == "CC":
+                        self.data[pid]["CC_pos"].append((path, lbl))
                     else:
-                        self.data[pid]["MLO_pos"].append((path,lbl))
+                        self.data[pid]["MLO_pos"].append((path, lbl))
 
-        self.valid_ids=[
-            pid for pid,v in self.data.items()
-            if len(v["CC_pos"])>=K and len(v["MLO_pos"])>=K
-            and (len(v["CC_fp"])>0 or len(v["MLO_fp"])>0)
+        self.valid_ids = [
+            pid for pid, v in self.data.items()
+            if len(v["CC_pos"]) >= K and len(v["MLO_pos"]) >= K
+            and (len(v["CC_fp"]) > 0 or len(v["MLO_fp"]) > 0)
         ]
 
         print(f"✔ Loaded {len(self.valid_ids)} validation patient-sides")
@@ -184,39 +190,46 @@ class SiameseDatasetVal(Dataset):
         self.tf = transforms.Compose([
             transforms.Resize(input_size),
             transforms.ToTensor(),
-            transforms.Normalize([0.485]*3,[0.229]*3)
+            transforms.Normalize([0.485, 0.456, 0.406],
+                                 [0.229, 0.224, 0.225])
         ])
 
     def __len__(self):
         return len(self.valid_ids)
 
     def __getitem__(self, idx):
-        pid=self.valid_ids[idx]
-        v=self.data[pid]
+        pid = self.valid_ids[idx]
+        v = self.data[pid]
 
-        cc_imgs,mlo_imgs=[],[]
-        match,cc_lbl,mlo_lbl=[],[],[]
+        cc_imgs, mlo_imgs = [], []
+        match, cc_lbl, mlo_lbl = [], [], []
 
+        # positive
         for i in range(self.K):
-            cc_p,cc_l=v["CC_pos"][i]
-            mlo_p,mlo_l=v["MLO_pos"][i]
+            cc_p, cc_l = v["CC_pos"][i]
+            mlo_p, mlo_l = v["MLO_pos"][i]
 
             cc_imgs.append(self.tf(Image.open(cc_p).convert("RGB")))
             mlo_imgs.append(self.tf(Image.open(mlo_p).convert("RGB")))
+
             match.append(1.0)
             cc_lbl.append(cc_l)
             mlo_lbl.append(mlo_l)
 
+        # negative
         for i in range(self.K):
-            if len(v["MLO_fp"])>0:
-                cc_p,cc_l=v["CC_pos"][i]
-                mlo_p,mlo_l=v["MLO_fp"][i%len(v["MLO_fp"])]
+            if len(v["MLO_fp"]) > 0:
+                cc_p, cc_l = v["CC_pos"][i]
+                mlo_p = v["MLO_fp"][i % len(v["MLO_fp"])]
+                mlo_l = 2
             else:
-                cc_p,cc_l=v["CC_fp"][i%len(v["CC_fp"])]
-                mlo_p,mlo_l=v["MLO_pos"][i]
+                cc_p = v["CC_fp"][i % len(v["CC_fp"])]
+                cc_l = 2
+                mlo_p, mlo_l = v["MLO_pos"][i]
 
             cc_imgs.append(self.tf(Image.open(cc_p).convert("RGB")))
             mlo_imgs.append(self.tf(Image.open(mlo_p).convert("RGB")))
+
             match.append(0.0)
             cc_lbl.append(cc_l)
             mlo_lbl.append(mlo_l)
@@ -225,14 +238,14 @@ class SiameseDatasetVal(Dataset):
             torch.stack(cc_imgs),
             torch.stack(mlo_imgs)
         ), (
-            torch.tensor(match),
-            torch.tensor(cc_lbl),
-            torch.tensor(mlo_lbl)
+            torch.tensor(match, dtype=torch.float32),
+            torch.tensor(cc_lbl, dtype=torch.long),
+            torch.tensor(mlo_lbl, dtype=torch.long)
         )
 
 
 # ===============================================================
-# Correct collate function
+# collate
 # ===============================================================
 def siamese_collate(batch):
     cc_imgs, mlo_imgs = [], []
@@ -253,6 +266,7 @@ def siamese_collate(batch):
         torch.cat(cc_lbls),
         torch.cat(mlo_lbls)
     )
+
 '''
 import os
 import random
