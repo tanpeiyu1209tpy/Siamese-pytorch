@@ -10,12 +10,6 @@ import re
 # Parse patch filename
 # ============================
 def parse_patch_name(name):
-    """
-    012e0595adba5173b6e60a97f9e84b6e_L_CC_8.jpg
-    return:
-        gt_image_id = 012e0595adba5173b6e60a97f9e84b6e_L_CC
-        idx = 8
-    """
     name = name.replace(".jpg", "").replace(".png", "")
     m = re.match(r"(.*)_([LR])_(CC|MLO)_(\d+)", name)
     if not m:
@@ -97,7 +91,7 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
             if parsed is None:
                 continue
             
-            gt_image_id, yolo_idx = parsed
+            gt_image_id = parsed[0]
             
             txt_path = os.path.join(
                 yolo_pred_dir,
