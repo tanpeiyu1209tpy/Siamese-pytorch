@@ -118,6 +118,14 @@ def validate_joint(model, loader, device,
                     "mean =", dist.mean().item(),
                     "max =", dist.max().item()
                 )
+
+                pos = dist[match_label == 1]
+                neg = dist[match_label == 0]
+                print(
+                    "pos mean:", pos.mean().item(),
+                    "neg mean:", neg.mean().item()
+                )
+
                 printed = True
 
             # compute loss
