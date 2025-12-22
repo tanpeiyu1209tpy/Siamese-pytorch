@@ -21,16 +21,21 @@ transform = transforms.Compose([
 
 # 解析 patch 文件名
 def parse_patch_filename(name):
-    name = name.replace(".png", "")
-    m = re.match(r"(.+?)_([A-Z]+)_pred(\d+)_yolo(\d+)", name)
-    if not m:
+    """
+    Example:
+    012e0595adba5173b6e60a97f9e84b6e_L_MLO_3.png
+    """
+    name = name.replace(".png", "").replace(".jpg", "")
+    parts = name.split("_")
+    if len(parts) < 4:
         return None
-    return (
-        m.group(1),            # image_id
-        m.group(2),            # view (CC/MLO)
-        int(m.group(3)),       # pred index
-        int(m.group(4))        # yolo index
-    )
+
+    image_id = parts[0]
+    side     = parts[1]        # L / R
+    view     = parts[2]        # CC / MLO
+    idx      = int(parts[3])   # crop index
+
+    return image_id, side, view, idx
 
 
 def run_full_inference(model_path, cc_dir, mlo_dir):
@@ -63,7 +68,7 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
             cc_info = parse_patch_filename(cc_f)
             if cc_info is None:
                 continue
-            cc_imgid, cc_view, cc_pred_idx, cc_yolo_idx = cc_info
+            cc_imgid, cc_side, cc_view, cc_idx = cc_info
 
             cc_img = cv2.imread(os.path.join(cc_dir, p, cc_f))
             cc_tensor = transform(cc_img).unsqueeze(0).to(device)
@@ -72,7 +77,8 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
                 mlo_info = parse_patch_filename(mlo_f)
                 if mlo_info is None:
                     continue
-                mlo_imgid, mlo_view, mlo_pred_idx, mlo_yolo_idx = mlo_info
+                mlo_imgid, mlo_side, mlo_view, mlo_idx = mlo_info
+
 
                 mlo_img = cv2.imread(os.path.join(mlo_dir, p, mlo_f))
                 mlo_tensor = transform(mlo_img).unsqueeze(0).to(device)
