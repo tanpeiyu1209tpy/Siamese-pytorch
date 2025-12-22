@@ -85,8 +85,8 @@ def evaluate(gt_dir, yolo_pred_dir, siamese_csv):
     for _, row in df.iterrows():
 
         for patch_name, pred_class in [
-            (row["CC_patch"], row["cc_pred_class"]),
-            (row["MLO_patch"], row["mlo_pred_class"])
+            (row["CC_patch"], row["cc_class"]),
+            (row["MLO_patch"], row["mlo_class"])
         ]:
 
             pred_class = int(pred_class)
