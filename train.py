@@ -95,7 +95,7 @@ def validate_joint(model, loader, device,
     total_mlo_correct = 0
     total_pairs = 0
 
-    threshold = margin / 2.0
+    #threshold = margin / 2.0
 
     with torch.no_grad():
 
@@ -110,6 +110,8 @@ def validate_joint(model, loader, device,
 
             # forward all 10 samples (5 pos, 5 neg)
             dist, cc_logits, mlo_logits = model((cc_batch, mlo_batch))
+
+            threshold = dist.mean()
 
             # compute loss
             loss_m = contrastive_loss(dist, match_label)
@@ -199,7 +201,7 @@ def get_args():
     # ---------------- Siamese ----------------
     parser.add_argument("--K", type=int, default=5,
                         help="Number of positive / negative pairs per patient")
-    parser.add_argument("--margin", type=float, default=5.0)
+    parser.add_argument("--margin", type=float, default=15.0)
 
     # ---------------- Loss Weights ----------------
     parser.add_argument("--alpha", type=float, default=1.0,
