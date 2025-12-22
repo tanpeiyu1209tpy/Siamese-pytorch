@@ -1,4 +1,3 @@
-'''
 import os
 import random
 import re
@@ -132,7 +131,7 @@ class SiameseDatasetTrain(Dataset):
             cc_imgs.append(self.load_image(cc_path))
             mlo_imgs.append(self.load_image(mlo_path))
 
-            match_labels.append(0.0)
+            match_labels.append(-1.0)
             cc_labels.append(cc_lbl)
             mlo_labels.append(mlo_lbl)
 
@@ -235,7 +234,7 @@ class SiameseDatasetVal(Dataset):
 
             cc_imgs.append(self.load_image(cc_path))
             mlo_imgs.append(self.load_image(mlo_path))
-            match_labels.append(0.0)
+            match_labels.append(-1.0)
             cc_labels.append(cc_lbl)
             mlo_labels.append(mlo_lbl)
 
@@ -583,3 +582,4 @@ def siamese_collate(batch):
         torch.cat(cc_lbls),
         torch.cat(mlo_lbls)
     )
+'''
