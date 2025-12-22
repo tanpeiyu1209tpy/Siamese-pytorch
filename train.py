@@ -43,7 +43,7 @@ def train_one_epoch(model, loader, optimizer, device,
     pbar = tqdm(loader, desc=f"Epoch {epoch}/{total_epoch} [Train]")
     total_loss = 0
 
-    for (cc, mlo), (match_label, cc_label, mlo_label) in pbar:
+    for step, ((cc, mlo), (match_label, cc_label, mlo_label)) in enumerate(pbar,1):
 
         cc, mlo = cc.to(device), mlo.to(device)
         match_label = match_label.to(device)
@@ -72,7 +72,7 @@ def train_one_epoch(model, loader, optimizer, device,
         total_loss += loss.item()
 
         pbar.set_postfix({
-            "loss": total_loss / (pbar.n + 1),
+            "loss": total_loss / step,
             "match": loss_m.item(),
             "cls": (loss_cc.item() + loss_mlo.item()) / 2
         })
@@ -96,7 +96,7 @@ def validate_joint(model, loader, device,
     total_mlo_correct = 0
     total_pairs = 0
 
-    #threshold = margin / 2.0
+    threshold = margin / 2.0
 
     with torch.no_grad():
 
@@ -119,7 +119,6 @@ def validate_joint(model, loader, device,
                     "max =", dist.max().item()
                 )
                 printed = True
-            threshold = dist.mean()
 
             # compute loss
             loss_m = contrastive_loss(dist, match_label)
@@ -209,7 +208,7 @@ def get_args():
     # ---------------- Siamese ----------------
     parser.add_argument("--K", type=int, default=5,
                         help="Number of positive / negative pairs per patient")
-    parser.add_argument("--margin", type=float, default=15.0)
+    parser.add_argument("--margin", type=float, default=10.0)
 
     # ---------------- Loss Weights ----------------
     parser.add_argument("--alpha", type=float, default=1.0,
