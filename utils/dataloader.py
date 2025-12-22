@@ -29,7 +29,7 @@ def parse_filename(fname):
 # ===============================================================
 class SiameseDatasetTrain(Dataset):
     def __init__(self, root_dir, input_size=(128, 128), K=5):
-        print("📌 Using SiameseDatasetTrain (K-pair sampling)")
+        print("📌 Using SiameseDatasetTrain (lesion-only matching)")
 
         self.root_dir = root_dir
         self.input_size = input_size
@@ -73,16 +73,29 @@ class SiameseDatasetTrain(Dataset):
                         self.data[pid]["MLO_pos"].append((fpath, self.class_map[cls_name]))
 
         # ------------------------------
-        # valid patient-sides
+        # valid lesion pids (must have CC & MLO pos)
         # ------------------------------
         self.valid_ids = [
             pid for pid, v in self.data.items()
             if len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0
         ]
 
-        print(f"✔ Loaded {len(self.valid_ids)} training patient-sides")
+        # build lesion pools
+        self.mass_pids = []
+        self.calc_pids = []
 
-        # augmentation (train only)
+        for pid in self.valid_ids:
+            lbl = self.data[pid]["CC_pos"][0][1]
+            if lbl == self.class_map["Mass"]:
+                self.mass_pids.append(pid)
+            elif lbl == self.class_map["Suspicious_Calcification"]:
+                self.calc_pids.append(pid)
+
+        print(f"✔ Loaded {len(self.valid_ids)} training patient-sides")
+        print("Mass pids:", len(self.mass_pids))
+        print("Calc pids:", len(self.calc_pids))
+
+        # augmentation
         self.to_tensor = transforms.Compose([
             transforms.RandomRotation(25),
             transforms.RandomHorizontalFlip(),
@@ -100,12 +113,11 @@ class SiameseDatasetTrain(Dataset):
         v = self.data[pid]
 
         cc_imgs, mlo_imgs = [], []
-        match_labels = []
-        cc_labels, mlo_labels = [], []
+        match_labels, cc_labels, mlo_labels = [], [], []
 
-        # =====================================
-        # 1️⃣ Positive pairs (K)
-        # =====================================
+        # -------------------------
+        # Positive matching (same pid)
+        # -------------------------
         for _ in range(self.K):
             cc_path, cc_lbl = random.choice(v["CC_pos"])
             mlo_path, mlo_lbl = random.choice(v["MLO_pos"])
@@ -117,40 +129,44 @@ class SiameseDatasetTrain(Dataset):
             cc_labels.append(cc_lbl)
             mlo_labels.append(mlo_lbl)
 
-        # =====================================
-        # 2️⃣ Negative pairs (K)
-        # =====================================
+        # -------------------------
+        # Negative matching (different pid, same lesion type)
+        # -------------------------
+        pid_label = v["CC_pos"][0][1]
+        pool = self.mass_pids if pid_label == self.class_map["Mass"] else self.calc_pids
+        neg_pool = [p for p in pool if p != pid]
+
         for _ in range(self.K):
-            if random.random() < 0.5:
-                cc_path, cc_lbl = random.choice(v["CC_pos"])
-                mlo_path, mlo_lbl = random.choice(v["MLO_neg"])
-            else:
-                cc_path, cc_lbl = random.choice(v["CC_neg"])
-                mlo_path, mlo_lbl = random.choice(v["MLO_pos"])
+            neg_pid = random.choice(neg_pool)
+            neg_v = self.data[neg_pid]
+
+            cc_path, cc_lbl = random.choice(v["CC_pos"])
+            mlo_path, mlo_lbl = random.choice(neg_v["MLO_pos"])
 
             cc_imgs.append(self.load_image(cc_path))
             mlo_imgs.append(self.load_image(mlo_path))
 
-            match_labels.append(-1.0)
+            match_labels.append(0.0)
             cc_labels.append(cc_lbl)
             mlo_labels.append(mlo_lbl)
 
         return (
             torch.stack(cc_imgs),
-            torch.stack(mlo_imgs),
+            torch.stack(mlo_imgs)
         ), (
             torch.tensor(match_labels).float(),
             torch.tensor(cc_labels).long(),
-            torch.tensor(mlo_labels).long(),
+            torch.tensor(mlo_labels).long()
         )
 
     def load_image(self, path):
         return self.to_tensor(Image.open(path).convert("RGB"))
 
 
+
 class SiameseDatasetVal(Dataset):
     def __init__(self, root_dir, input_size=(128, 128), K=5):
-        print("📌 Using SiameseDatasetVal (fixed pairs)")
+        print("📌 Using SiameseDatasetVal (fixed lesion-only pairs)")
 
         self.root_dir = root_dir
         self.input_size = input_size
@@ -159,13 +175,12 @@ class SiameseDatasetVal(Dataset):
         self.class_map = {"Mass": 0, "Suspicious_Calcification": 1, "Negative": 2}
         self.data = {}
 
-        # -------- scan folders (同 train) --------
         for cls_name in ["Mass", "Suspicious_Calcification", "Negative"]:
             cls_dir = os.path.join(root_dir, cls_name)
             if not os.path.exists(cls_dir):
                 continue
 
-            for fname in sorted(os.listdir(cls_dir)):  # ⚠️ sorted → deterministic
+            for fname in sorted(os.listdir(cls_dir)):
                 parsed = parse_filename(fname)
                 if parsed is None:
                     continue
@@ -181,14 +196,10 @@ class SiameseDatasetVal(Dataset):
                 fpath = os.path.join(cls_dir, fname)
 
                 if parsed["view"] == "CC":
-                    if cls_name == "Negative":
-                        self.data[pid]["CC_neg"].append((fpath, 2))
-                    else:
+                    if cls_name != "Negative":
                         self.data[pid]["CC_pos"].append((fpath, self.class_map[cls_name]))
                 else:
-                    if cls_name == "Negative":
-                        self.data[pid]["MLO_neg"].append((fpath, 2))
-                    else:
+                    if cls_name != "Negative":
                         self.data[pid]["MLO_pos"].append((fpath, self.class_map[cls_name]))
 
         self.valid_ids = [
@@ -196,9 +207,16 @@ class SiameseDatasetVal(Dataset):
             if len(v["CC_pos"]) >= K and len(v["MLO_pos"]) >= K
         ]
 
+        self.mass_pids, self.calc_pids = [], []
+        for pid in self.valid_ids:
+            lbl = self.data[pid]["CC_pos"][0][1]
+            if lbl == self.class_map["Mass"]:
+                self.mass_pids.append(pid)
+            elif lbl == self.class_map["Suspicious_Calcification"]:
+                self.calc_pids.append(pid)
+
         print(f"✔ Loaded {len(self.valid_ids)} validation patient-sides")
 
-        # ❗ no augmentation
         self.to_tensor = transforms.Compose([
             transforms.Resize(input_size),
             transforms.ToTensor(),
@@ -216,25 +234,32 @@ class SiameseDatasetVal(Dataset):
         cc_imgs, mlo_imgs = [], []
         match_labels, cc_labels, mlo_labels = [], [], []
 
-        # -------- positive pairs (fixed) --------
+        # positive
         for i in range(self.K):
             cc_path, cc_lbl = v["CC_pos"][i]
             mlo_path, mlo_lbl = v["MLO_pos"][i]
 
             cc_imgs.append(self.load_image(cc_path))
             mlo_imgs.append(self.load_image(mlo_path))
+
             match_labels.append(1.0)
             cc_labels.append(cc_lbl)
             mlo_labels.append(mlo_lbl)
 
-        # -------- negative pairs (fixed) --------
+        # negative (fixed cross pid)
+        pid_label = v["CC_pos"][0][1]
+        pool = self.mass_pids if pid_label == self.class_map["Mass"] else self.calc_pids
+        neg_pid = pool[(idx + 1) % len(pool)]
+        neg_v = self.data[neg_pid]
+
         for i in range(self.K):
-            cc_path, cc_lbl = v["CC_neg"][i]
-            mlo_path, mlo_lbl = v["MLO_neg"][i]
+            cc_path, cc_lbl = v["CC_pos"][i]
+            mlo_path, mlo_lbl = neg_v["MLO_pos"][i]
 
             cc_imgs.append(self.load_image(cc_path))
             mlo_imgs.append(self.load_image(mlo_path))
-            match_labels.append(-1.0)
+
+            match_labels.append(0.0)
             cc_labels.append(cc_lbl)
             mlo_labels.append(mlo_lbl)
 
@@ -249,6 +274,7 @@ class SiameseDatasetVal(Dataset):
 
     def load_image(self, path):
         return self.to_tensor(Image.open(path).convert("RGB"))
+
 
 
 # ===============================================================
