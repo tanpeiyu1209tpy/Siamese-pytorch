@@ -96,7 +96,7 @@ def validate_joint(model, loader, device,
     total_mlo_correct = 0
     total_pairs = 0
 
-    threshold = margin / 2.0
+    #threshold = margin / 2.0
 
     with torch.no_grad():
 
@@ -136,6 +136,7 @@ def validate_joint(model, loader, device,
             # -------------------------
             # Compute accuracy
             # -------------------------
+            threshold = dist.mean()
             pred_match = (dist < threshold).long()
             total_match_correct += (pred_match == match_label).sum().item()
 
