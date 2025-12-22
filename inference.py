@@ -100,13 +100,12 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
                             "CC_patch": cc_f,
                             "MLO_patch": mlo_f,
                             "distance": dist.item(),
-                            "cc_pred_class": cc_pred,
-                            "mlo_pred_class": mlo_pred,
-                            "cc_image_id": cc_imgid,
-                            "mlo_image_id": mlo_imgid,
-                            "cc_yolo_idx": cc_yolo_idx,
-                            "mlo_yolo_idx": mlo_yolo_idx
+                            "cc_class": cc_pred,
+                            "mlo_class": mlo_pred,
+                            "cc_idx": cc_idx,
+                            "mlo_idx": mlo_idx
                         }
+
 
         # ----------------------------------------
         # Step 1 — save only ONE best pair for this patient
