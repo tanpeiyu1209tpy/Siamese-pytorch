@@ -9,6 +9,9 @@ import argparse
 import re
 import torch.nn.functional as F
 
+# --------------------------------------------------
+# Transform
+# --------------------------------------------------
 transform = transforms.Compose([
     transforms.ToPILImage(),
     transforms.Resize((128, 128)),
@@ -18,7 +21,6 @@ transform = transforms.Compose([
         std=[0.229, 0.224, 0.225]
     )
 ])
-
 
 # --------------------------------------------------
 # Parse patch filename
@@ -42,7 +44,7 @@ def parse_patch_filename(name):
 
 
 # --------------------------------------------------
-# Inference with soft probabilistic fusion
+# Inference (Paper-aligned)
 # --------------------------------------------------
 def run_full_inference(model_path, cc_dir, mlo_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -65,7 +67,7 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
         mlo_list = sorted(os.listdir(os.path.join(mlo_dir, p)))
 
         best_pair = None
-        best_score = -1.0   # 🔧 CHANGED: maximize fusion score
+        best_dist = float("inf")   # ⭐ only distance matters
 
         for cc_f in cc_list:
             cc_info = parse_patch_filename(cc_f)
@@ -88,46 +90,40 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
                 with torch.no_grad():
                     dist, cc_logits, mlo_logits = model((cc_tensor, mlo_tensor))
 
-                # --------------------------------------------------
-                # 1. Distance → match probability
-                # --------------------------------------------------
-                distance = dist.item()
-                match_prob = torch.exp(-dist).item()   # 🔧 CHANGED
-
-                # --------------------------------------------------
-                # 2. Classification probability (lesion)
-                # assume:
-                #   class 0,1 = lesion
-                #   class 2   = background
-                # --------------------------------------------------
+                # ------------------------------
+                # Classification probabilities
+                # ------------------------------
                 cc_prob = F.softmax(cc_logits, dim=1)[0]
                 mlo_prob = F.softmax(mlo_logits, dim=1)[0]
 
-                cc_lesion_prob = (cc_prob[0] + cc_prob[1]).item()
-                mlo_lesion_prob = (mlo_prob[0] + mlo_prob[1]).item()
+                cc_cls = torch.argmax(cc_prob).item()
+                mlo_cls = torch.argmax(mlo_prob).item()
 
-                # --------------------------------------------------
-                # 3. Soft probabilistic fusion score
-                # --------------------------------------------------
-                fusion_score = (
-                    match_prob *
-                    np.sqrt(cc_lesion_prob * mlo_lesion_prob)
-                )  # 🔧 CHANGED
+                # class convention:
+                # 0,1 = lesion
+                # 2   = background
+                if cc_cls == 2 or mlo_cls == 2:
+                    continue   # 🔒 classification gate
 
-                # --------------------------------------------------
-                # 4. Pick global best by fusion score
-                # --------------------------------------------------
-                if fusion_score > best_score:
-                    best_score = fusion_score
+                distance = dist.item()
+
+                # ------------------------------
+                # Pick best pair by distance
+                # ------------------------------
+                if distance < best_dist:
+                    best_dist = distance
                     best_pair = {
                         "patient": p,
                         "CC_patch": cc_f,
                         "MLO_patch": mlo_f,
                         "distance": distance,
-                        "match_prob": match_prob,
-                        "fusion_score": fusion_score,
-                        "cc_lesion_prob": cc_lesion_prob,
-                        "mlo_lesion_prob": mlo_lesion_prob,
+
+                        "cc_class": cc_cls,
+                        "mlo_class": mlo_cls,
+
+                        "cc_lesion_prob": (cc_prob[0] + cc_prob[1]).item(),
+                        "mlo_lesion_prob": (mlo_prob[0] + mlo_prob[1]).item(),
+
                         "cc_idx": cc_idx,
                         "mlo_idx": mlo_idx
                     }
@@ -146,7 +142,9 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
 # Main
 # --------------------------------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CMCNet Siamese Inference (Soft Fusion)")
+    parser = argparse.ArgumentParser(
+        description="CMCNet Siamese Inference (Paper-aligned: min distance)"
+    )
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--cc_dir", type=str, required=True)
     parser.add_argument("--mlo_dir", type=str, required=True)
