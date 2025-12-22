@@ -27,23 +27,20 @@ def parse_filename(fname):
 # ===============================================================
 # NEW CMCNet Dataset – FINAL FIX
 # ===============================================================
-class SiameseDataset(Dataset):
-    def __init__(self, root_dir, input_size=(64, 64), random_flag=True):
-        print("📌 Using NEW CMCNet SiameseDataset !!!")
+class SiameseDatasetTrain(Dataset):
+    def __init__(self, root_dir, input_size=(64, 64), K=5):
+        print("📌 Using SiameseDatasetTrain (K-pair sampling)")
 
         self.root_dir = root_dir
-        self.random_flag = random_flag
         self.input_size = input_size
+        self.K = K
 
-        # folder → class id
         self.class_map = {"Mass": 0, "Calcification": 1, "Negative": 2}
-
-        # pid → patch lists
         self.data = {}
 
-        # -------------------------------------------------
+        # ------------------------------
         # Scan folders
-        # -------------------------------------------------
+        # ------------------------------
         for cls_name in ["Mass", "Calcification", "Negative"]:
             cls_dir = os.path.join(root_dir, cls_name)
             if not os.path.exists(cls_dir):
@@ -59,8 +56,7 @@ class SiameseDataset(Dataset):
                 if pid not in self.data:
                     self.data[pid] = {
                         "CC_pos": [], "MLO_pos": [],
-                        "CC_neg": [], "MLO_neg": [],
-                        "cls": self.class_map[cls_name]
+                        "CC_neg": [], "MLO_neg": []
                     }
 
                 fpath = os.path.join(cls_dir, fname)
@@ -76,264 +72,81 @@ class SiameseDataset(Dataset):
                     else:
                         self.data[pid]["MLO_pos"].append((fpath, self.class_map[cls_name]))
 
-        # -------------------------------------------------
-        # VALID IDs: now supports Negative patients
-        # -------------------------------------------------
-        #self.valid_ids = [
-        #    pid for pid, v in self.data.items()
-        #    if (len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0) or
-        #       (len(v["CC_neg"]) > 0 and len(v["MLO_neg"]) > 0)
-        #]
-
-        self.valid_ids = [
-            pid for pid, v in self.data.items()
-            if len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0 
-        ]
-
-        print(f"✔ Loaded {len(self.valid_ids)} valid patient-sides with CC+MLO.")
-
-        #self.to_tensor = transforms.Compose([
-        #    transforms.RandomRotation(25),           # 随机旋转 25 度
-        #    transforms.RandomHorizontalFlip(),       # 随机水平翻转
-        #    transforms.RandomResizedCrop(input_size),# 随机裁剪/缩放
-        #    transforms.ToTensor(),
-        #    transforms.Normalize([0.485, 0.456, 0.406],
-        #                         [0.229, 0.224, 0.225])
-        #])
-
-        if self.random_flag:
-            # 训练集：随机增强
-            self.to_tensor = transforms.Compose([
-                # ⚠️ 确保在随机操作前有一个Resize，如果 RandomResizedCrop 不足以统一尺寸。
-                # 但既然使用了 RandomResizedCrop，可以假设它会处理尺寸。
-                transforms.RandomRotation(25),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomResizedCrop(input_size), # 目标尺寸 64x64
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-            ])
-        else:
-            # 验证集/测试集：仅缩放和归一化 (使用 Resize, 而非随机裁剪)
-            self.to_tensor = transforms.Compose([
-                transforms.Resize(input_size), # 统一尺寸到 64x64
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-            ])
-
-    def __len__(self):
-        return len(self.valid_ids)
-
-    # -------------------------------------------------
-    # Construct 1 positive + 1 negative pair
-    # -------------------------------------------------
-    def __getitem__(self, idx):
-        pid = self.valid_ids[idx]
-        v = self.data[pid]
-
-        # ======================================
-        # POSITIVE PAIR
-        # ======================================
-        if len(v["CC_pos"]) > 0:
-            cc_pos_path, cc_pos_lbl = random.choice(v["CC_pos"])
-            mlo_pos_path, mlo_pos_lbl = random.choice(v["MLO_pos"])
-            match_pos = 1.0
-        else:
-            # Negative patient → no positive pair
-            cc_pos_path, cc_pos_lbl = random.choice(v["CC_neg"])
-            mlo_pos_path, mlo_pos_lbl = random.choice(v["MLO_neg"])
-            match_pos = 1.0  # still match because same patient
-
-        # ======================================
-        # NEGATIVE PAIR
-        # ======================================
-
-        # If patient is POSITIVE
-        if len(v["CC_pos"]) > 0:
-            # pos × neg or neg × pos
-            if random.random() < 0.5:
-                cc_neg_path, cc_neg_lbl = random.choice(v["CC_neg"])
-                mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_pos"])
-            else:
-                cc_neg_path, cc_neg_lbl = random.choice(v["CC_pos"])
-                mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_neg"])
-        else:
-            # Negative patient → neg × neg
-            cc_neg_path, cc_neg_lbl = random.choice(v["CC_neg"])
-            mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_neg"])
-
-        match_neg = 0.0
-
-        cc_imgs = [
-            self.load_image(cc_pos_path),
-            self.load_image(cc_neg_path)
-        ]
-        mlo_imgs = [
-            self.load_image(mlo_pos_path),
-            self.load_image(mlo_neg_path)
-        ]
-
-        return (
-            torch.stack(cc_imgs),
-            torch.stack(mlo_imgs),
-        ), (
-            torch.tensor([match_pos, match_neg]).float(),
-            torch.tensor([cc_pos_lbl, cc_neg_lbl]).long(),
-            torch.tensor([mlo_pos_lbl, mlo_neg_lbl]).long(),
-        )
-
-    def load_image(self, path):
-        return self.to_tensor(Image.open(path).convert("RGB"))
-
-'''
-# ===============================================================
-# NEW CMCNet Dataset – Correct multi-task sampling
-# ===============================================================
-class SiameseDataset(Dataset):
-    def __init__(self, root_dir, input_size=(64, 64), random_flag=True):
-        print("📌 Using NEW CMCNet SiameseDataset !!!")  # debug 标记
-        self.root_dir = root_dir
-        self.random_flag = random_flag
-        self.input_size = input_size
-
-        # Folder-based labels
-        self.class_map = {"Mass": 0, "Calcification": 1, "Negative": 2}
-
-        # Data storage
-        # patient_id → CC_pos, MLO_pos, CC_neg, MLO_neg
-        self.data = {}
-
-        # -----------------------------
-        # 1. Scan all folders
-        # -----------------------------
-        for cls_name in ["Mass", "Calcification", "Negative"]:
-            cls_dir = os.path.join(root_dir, cls_name)
-            if not os.path.exists(cls_dir):
-                continue
-
-            for fname in os.listdir(cls_dir):
-                parsed = parse_filename(fname)
-                if parsed is None:
-                    continue
-
-                pid = f"{parsed['patient_id']}_{parsed['side']}"
-                if pid not in self.data:
-                    self.data[pid] = {
-                        "CC_pos": [], "MLO_pos": [],
-                        "CC_neg": [], "MLO_neg": []
-                    }
-
-                fpath = os.path.join(cls_dir, fname)
-
-                # ---------------------------
-                # Decide positive / negative
-                # ---------------------------
-                is_positive = (cls_name != "Negative")
-
-                # ---------------------------
-                # Store by view
-                # ---------------------------
-                if parsed["view"] == "CC":
-                    if is_positive:
-                        self.data[pid]["CC_pos"].append(
-                            (fpath, self.class_map[cls_name])
-                        )
-                    else:
-                        self.data[pid]["CC_neg"].append((fpath, 2))
-                else:
-                    if is_positive:
-                        self.data[pid]["MLO_pos"].append(
-                            (fpath, self.class_map[cls_name])
-                        )
-                    else:
-                        self.data[pid]["MLO_neg"].append((fpath, 2))
-
-        # -----------------------------
-        # 2. Keep only patients with both views
-        # -----------------------------
+        # ------------------------------
+        # valid patient-sides
+        # ------------------------------
         self.valid_ids = [
             pid for pid, v in self.data.items()
             if len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0
         ]
 
-        print(f"✔ Loaded {len(self.valid_ids)} valid patient-sides with CC+MLO.")
+        print(f"✔ Loaded {len(self.valid_ids)} training patient-sides")
 
-        # transform
+        # augmentation (train only)
         self.to_tensor = transforms.Compose([
-            transforms.Resize(input_size),
+            transforms.RandomRotation(25),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomResizedCrop(input_size),
             transforms.ToTensor(),
-            transforms.Normalize([0.485,0.456,0.406],
-                                 [0.229,0.224,0.225])
+            transforms.Normalize([0.485, 0.456, 0.406],
+                                 [0.229, 0.224, 0.225])
         ])
 
     def __len__(self):
         return len(self.valid_ids)
 
-    # ======================================================
-    # Return 1 positive pair + 1 negative pair
-    # ======================================================
     def __getitem__(self, idx):
         pid = self.valid_ids[idx]
         v = self.data[pid]
 
-        # -------------------------
-        # POSITIVE pair (same lesion = both positive)
-        # -------------------------
-        cc_pos_path, cc_pos_cls = random.choice(v["CC_pos"])
-        mlo_pos_path, mlo_pos_cls = random.choice(v["MLO_pos"])
+        cc_imgs, mlo_imgs = [], []
+        match_labels = []
+        cc_labels, mlo_labels = [], []
 
-        match_pos = 1.0
+        # =====================================
+        # 1️⃣ Positive pairs (K)
+        # =====================================
+        for _ in range(self.K):
+            cc_path, cc_lbl = random.choice(v["CC_pos"])
+            mlo_path, mlo_lbl = random.choice(v["MLO_pos"])
 
-        # Patch-level classification labels
-        cc_pos_lbl = cc_pos_cls
-        mlo_pos_lbl = mlo_pos_cls
+            cc_imgs.append(self.load_image(cc_path))
+            mlo_imgs.append(self.load_image(mlo_path))
 
-        # -------------------------
-        # NEGATIVE pair (正 × 负 或 负 × 正)
-        # -------------------------
-        cc_neg_pool = v["CC_neg"] + v["CC_pos"]
-        mlo_neg_pool = v["MLO_neg"] + v["MLO_pos"]
+            match_labels.append(1.0)
+            cc_labels.append(cc_lbl)
+            mlo_labels.append(mlo_lbl)
 
-        if random.random() < 0.5:
-            # CC negative + MLO positive
-            cc_neg_path, cc_neg_lbl = random.choice(cc_neg_pool)
-            mlo_neg_path, mlo_neg_lbl = random.choice(v["MLO_pos"])
-        else:
-            # CC positive + MLO negative
-            cc_neg_path, cc_neg_lbl = random.choice(v["CC_pos"])
-            mlo_neg_path, mlo_neg_lbl = random.choice(mlo_neg_pool)
+        # =====================================
+        # 2️⃣ Negative pairs (K)
+        # =====================================
+        for _ in range(self.K):
+            if random.random() < 0.5:
+                cc_path, cc_lbl = random.choice(v["CC_pos"])
+                mlo_path, mlo_lbl = random.choice(v["MLO_neg"])
+            else:
+                cc_path, cc_lbl = random.choice(v["CC_neg"])
+                mlo_path, mlo_lbl = random.choice(v["MLO_pos"])
 
-        match_neg = 0.0
+            cc_imgs.append(self.load_image(cc_path))
+            mlo_imgs.append(self.load_image(mlo_path))
 
-        # -------------------------
-        # load images
-        # -------------------------
-        cc_imgs = [
-            self.load_image(cc_pos_path),
-            self.load_image(cc_neg_path)
-        ]
-
-        mlo_imgs = [
-            self.load_image(mlo_pos_path),
-            self.load_image(mlo_neg_path)
-        ]
-
-        match_labels = torch.tensor([match_pos, match_neg])
-        cc_cls = torch.tensor([cc_pos_lbl, cc_neg_lbl])
-        mlo_cls = torch.tensor([mlo_pos_lbl, mlo_neg_lbl])
+            match_labels.append(0.0)
+            cc_labels.append(cc_lbl)
+            mlo_labels.append(mlo_lbl)
 
         return (
             torch.stack(cc_imgs),
-            torch.stack(mlo_imgs)
+            torch.stack(mlo_imgs),
         ), (
-            match_labels.float(),
-            cc_cls.long(),
-            mlo_cls.long()
+            torch.tensor(match_labels).float(),
+            torch.tensor(cc_labels).long(),
+            torch.tensor(mlo_labels).long(),
         )
 
     def load_image(self, path):
         return self.to_tensor(Image.open(path).convert("RGB"))
 
-'''
 # ===============================================================
 # Correct collate function
 # ===============================================================
