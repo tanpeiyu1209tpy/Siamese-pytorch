@@ -7,10 +7,11 @@ from torchvision import transforms
 import pandas as pd
 import argparse
 import re
+import torch.nn.functional as F
 
 transform = transforms.Compose([
     transforms.ToPILImage(),
-    transforms.Resize((128, 128)), 
+    transforms.Resize((128, 128)),
     transforms.ToTensor(),
     transforms.Normalize(
         mean=[0.485, 0.456, 0.406],
@@ -19,7 +20,9 @@ transform = transforms.Compose([
 ])
 
 
-# 解析 patch 文件名
+# --------------------------------------------------
+# Parse patch filename
+# --------------------------------------------------
 def parse_patch_filename(name):
     """
     Example:
@@ -38,6 +41,9 @@ def parse_patch_filename(name):
     return image_id, side, view, idx
 
 
+# --------------------------------------------------
+# Inference with soft probabilistic fusion
+# --------------------------------------------------
 def run_full_inference(model_path, cc_dir, mlo_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -58,17 +64,14 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
         cc_list = sorted(os.listdir(os.path.join(cc_dir, p)))
         mlo_list = sorted(os.listdir(os.path.join(mlo_dir, p)))
 
-        best_pair = None  # ⭐ 最佳 pair
-        best_dist = float("inf")
+        best_pair = None
+        best_score = -1.0   # 🔧 CHANGED: maximize fusion score
 
-        # ----------------------------------------
-        # Step 0 — compute all distances and pick global best
-        # ----------------------------------------
         for cc_f in cc_list:
             cc_info = parse_patch_filename(cc_f)
             if cc_info is None:
                 continue
-            cc_imgid, cc_side, cc_view, cc_idx = cc_info
+            _, _, _, cc_idx = cc_info
 
             cc_img = cv2.imread(os.path.join(cc_dir, p, cc_f))
             cc_tensor = transform(cc_img).unsqueeze(0).to(device)
@@ -77,8 +80,7 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
                 mlo_info = parse_patch_filename(mlo_f)
                 if mlo_info is None:
                     continue
-                mlo_imgid, mlo_side, mlo_view, mlo_idx = mlo_info
-
+                _, _, _, mlo_idx = mlo_info
 
                 mlo_img = cv2.imread(os.path.join(mlo_dir, p, mlo_f))
                 mlo_tensor = transform(mlo_img).unsqueeze(0).to(device)
@@ -86,30 +88,50 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
                 with torch.no_grad():
                     dist, cc_logits, mlo_logits = model((cc_tensor, mlo_tensor))
 
-                cc_pred = torch.argmax(cc_logits, dim=1).item()
-                mlo_pred = torch.argmax(mlo_logits, dim=1).item()
+                # --------------------------------------------------
+                # 1. Distance → match probability
+                # --------------------------------------------------
+                distance = dist.item()
+                match_prob = torch.exp(-dist).item()   # 🔧 CHANGED
 
-                # only positive
-                if cc_pred in (0,1) and mlo_pred in (0,1):
+                # --------------------------------------------------
+                # 2. Classification probability (lesion)
+                # assume:
+                #   class 0,1 = lesion
+                #   class 2   = background
+                # --------------------------------------------------
+                cc_prob = F.softmax(cc_logits, dim=1)[0]
+                mlo_prob = F.softmax(mlo_logits, dim=1)[0]
 
-                    # ⭐ pick global best (minimum distance)
-                    if dist.item() < best_dist:
-                        best_dist = dist.item()
-                        best_pair = {
-                            "patient": p,
-                            "CC_patch": cc_f,
-                            "MLO_patch": mlo_f,
-                            "distance": dist.item(),
-                            "cc_class": cc_pred,
-                            "mlo_class": mlo_pred,
-                            "cc_idx": cc_idx,
-                            "mlo_idx": mlo_idx
-                        }
+                cc_lesion_prob = (cc_prob[0] + cc_prob[1]).item()
+                mlo_lesion_prob = (mlo_prob[0] + mlo_prob[1]).item()
 
+                # --------------------------------------------------
+                # 3. Soft probabilistic fusion score
+                # --------------------------------------------------
+                fusion_score = (
+                    match_prob *
+                    np.sqrt(cc_lesion_prob * mlo_lesion_prob)
+                )  # 🔧 CHANGED
 
-        # ----------------------------------------
-        # Step 1 — save only ONE best pair for this patient
-        # ----------------------------------------
+                # --------------------------------------------------
+                # 4. Pick global best by fusion score
+                # --------------------------------------------------
+                if fusion_score > best_score:
+                    best_score = fusion_score
+                    best_pair = {
+                        "patient": p,
+                        "CC_patch": cc_f,
+                        "MLO_patch": mlo_f,
+                        "distance": distance,
+                        "match_prob": match_prob,
+                        "fusion_score": fusion_score,
+                        "cc_lesion_prob": cc_lesion_prob,
+                        "mlo_lesion_prob": mlo_lesion_prob,
+                        "cc_idx": cc_idx,
+                        "mlo_idx": mlo_idx
+                    }
+
         if best_pair is not None:
             rows.append(best_pair)
 
@@ -120,8 +142,11 @@ def run_full_inference(model_path, cc_dir, mlo_dir):
     return df
 
 
+# --------------------------------------------------
+# Main
+# --------------------------------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CMCNet Siamese Inference")
+    parser = argparse.ArgumentParser(description="CMCNet Siamese Inference (Soft Fusion)")
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--cc_dir", type=str, required=True)
     parser.add_argument("--mlo_dir", type=str, required=True)
