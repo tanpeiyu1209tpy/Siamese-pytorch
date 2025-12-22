@@ -144,7 +144,7 @@ def validate_joint(model, loader, device,
             # -------------------------
             # Compute accuracy
             # -------------------------
-            threshold = dist.mean()
+            threshold = 1
             pred_match = (dist < threshold).long()
             total_match_correct += (pred_match == match_label).sum().item()
 
