@@ -29,7 +29,7 @@ def parse_filename(fname):
 # ===============================================================
 class SiameseDatasetTrain(Dataset):
     def __init__(self, root_dir, input_size=(128, 128), K=5):
-        print("📌 Using SiameseDatasetTrain (lesion-only matching)")
+        print("📌 Using SiameseDatasetTrain (intra-patient matching)")
 
         self.root_dir = root_dir
         self.input_size = input_size
@@ -52,50 +52,29 @@ class SiameseDatasetTrain(Dataset):
                     continue
 
                 pid = f"{parsed['patient_id']}_{parsed['side']}"
-
-                if pid not in self.data:
-                    self.data[pid] = {
-                        "CC_pos": [], "MLO_pos": [],
-                        "CC_neg": [], "MLO_neg": []
-                    }
+                self.data.setdefault(pid, {
+                    "CC_pos": [], "MLO_pos": [],
+                    "CC_neg": [], "MLO_neg": []
+                })
 
                 fpath = os.path.join(cls_dir, fname)
+                lbl = self.class_map.get(cls_name, 2)
 
                 if parsed["view"] == "CC":
-                    if cls_name == "Negative":
-                        self.data[pid]["CC_neg"].append((fpath, 2))
-                    else:
-                        self.data[pid]["CC_pos"].append((fpath, self.class_map[cls_name]))
+                    (self.data[pid]["CC_neg"] if lbl == 2 else self.data[pid]["CC_pos"]).append((fpath, lbl))
                 else:
-                    if cls_name == "Negative":
-                        self.data[pid]["MLO_neg"].append((fpath, 2))
-                    else:
-                        self.data[pid]["MLO_pos"].append((fpath, self.class_map[cls_name]))
+                    (self.data[pid]["MLO_neg"] if lbl == 2 else self.data[pid]["MLO_pos"]).append((fpath, lbl))
 
         # ------------------------------
-        # valid lesion pids (must have CC & MLO pos)
+        # valid ids：至少有 lesion
         # ------------------------------
         self.valid_ids = [
             pid for pid, v in self.data.items()
             if len(v["CC_pos"]) > 0 and len(v["MLO_pos"]) > 0
         ]
 
-        # build lesion pools
-        self.mass_pids = []
-        self.calc_pids = []
-
-        for pid in self.valid_ids:
-            lbl = self.data[pid]["CC_pos"][0][1]
-            if lbl == self.class_map["Mass"]:
-                self.mass_pids.append(pid)
-            elif lbl == self.class_map["Suspicious_Calcification"]:
-                self.calc_pids.append(pid)
-
         print(f"✔ Loaded {len(self.valid_ids)} training patient-sides")
-        print("Mass pids:", len(self.mass_pids))
-        print("Calc pids:", len(self.calc_pids))
 
-        # augmentation
         self.to_tensor = transforms.Compose([
             transforms.RandomRotation(25),
             transforms.RandomHorizontalFlip(),
@@ -115,37 +94,34 @@ class SiameseDatasetTrain(Dataset):
         cc_imgs, mlo_imgs = [], []
         match_labels, cc_labels, mlo_labels = [], [], []
 
-        # -------------------------
-        # Positive matching (same pid)
-        # -------------------------
+        # =========================
+        # 1️⃣ Positive match: lesion ↔ lesion
+        # =========================
         for _ in range(self.K):
             cc_path, cc_lbl = random.choice(v["CC_pos"])
             mlo_path, mlo_lbl = random.choice(v["MLO_pos"])
 
             cc_imgs.append(self.load_image(cc_path))
             mlo_imgs.append(self.load_image(mlo_path))
-
             match_labels.append(1.0)
             cc_labels.append(cc_lbl)
             mlo_labels.append(mlo_lbl)
 
-        # -------------------------
-        # Negative matching (different pid, same lesion type)
-        # -------------------------
-        pid_label = v["CC_pos"][0][1]
-        pool = self.mass_pids if pid_label == self.class_map["Mass"] else self.calc_pids
-        neg_pool = [p for p in pool if p != pid]
-
+        # =========================
+        # 2️⃣ Negative match: lesion ↔ background (same patient)
+        # =========================
         for _ in range(self.K):
-            neg_pid = random.choice(neg_pool)
-            neg_v = self.data[neg_pid]
-
-            cc_path, cc_lbl = random.choice(v["CC_pos"])
-            mlo_path, mlo_lbl = random.choice(neg_v["MLO_pos"])
+            if random.random() < 0.5 and len(v["MLO_neg"]) > 0:
+                cc_path, cc_lbl = random.choice(v["CC_pos"])
+                mlo_path, mlo_lbl = random.choice(v["MLO_neg"])
+            elif len(v["CC_neg"]) > 0:
+                cc_path, cc_lbl = random.choice(v["CC_neg"])
+                mlo_path, mlo_lbl = random.choice(v["MLO_pos"])
+            else:
+                continue  # fallback protection
 
             cc_imgs.append(self.load_image(cc_path))
             mlo_imgs.append(self.load_image(mlo_path))
-
             match_labels.append(0.0)
             cc_labels.append(cc_lbl)
             mlo_labels.append(mlo_lbl)
@@ -154,19 +130,17 @@ class SiameseDatasetTrain(Dataset):
             torch.stack(cc_imgs),
             torch.stack(mlo_imgs)
         ), (
-            torch.tensor(match_labels).float(),
-            torch.tensor(cc_labels).long(),
-            torch.tensor(mlo_labels).long()
+            torch.tensor(match_labels),
+            torch.tensor(cc_labels),
+            torch.tensor(mlo_labels)
         )
 
     def load_image(self, path):
         return self.to_tensor(Image.open(path).convert("RGB"))
 
-
-
 class SiameseDatasetVal(Dataset):
     def __init__(self, root_dir, input_size=(128, 128), K=5):
-        print("📌 Using SiameseDatasetVal (fixed lesion-only pairs)")
+        print("📌 Using SiameseDatasetVal (fixed intra-patient matching)")
 
         self.root_dir = root_dir
         self.input_size = input_size
@@ -186,34 +160,23 @@ class SiameseDatasetVal(Dataset):
                     continue
 
                 pid = f"{parsed['patient_id']}_{parsed['side']}"
-
-                if pid not in self.data:
-                    self.data[pid] = {
-                        "CC_pos": [], "MLO_pos": [],
-                        "CC_neg": [], "MLO_neg": []
-                    }
+                self.data.setdefault(pid, {
+                    "CC_pos": [], "MLO_pos": [],
+                    "CC_neg": [], "MLO_neg": []
+                })
 
                 fpath = os.path.join(cls_dir, fname)
+                lbl = self.class_map.get(cls_name, 2)
 
                 if parsed["view"] == "CC":
-                    if cls_name != "Negative":
-                        self.data[pid]["CC_pos"].append((fpath, self.class_map[cls_name]))
+                    (self.data[pid]["CC_neg"] if lbl == 2 else self.data[pid]["CC_pos"]).append((fpath, lbl))
                 else:
-                    if cls_name != "Negative":
-                        self.data[pid]["MLO_pos"].append((fpath, self.class_map[cls_name]))
+                    (self.data[pid]["MLO_neg"] if lbl == 2 else self.data[pid]["MLO_pos"]).append((fpath, lbl))
 
         self.valid_ids = [
             pid for pid, v in self.data.items()
             if len(v["CC_pos"]) >= K and len(v["MLO_pos"]) >= K
         ]
-
-        self.mass_pids, self.calc_pids = [], []
-        for pid in self.valid_ids:
-            lbl = self.data[pid]["CC_pos"][0][1]
-            if lbl == self.class_map["Mass"]:
-                self.mass_pids.append(pid)
-            elif lbl == self.class_map["Suspicious_Calcification"]:
-                self.calc_pids.append(pid)
 
         print(f"✔ Loaded {len(self.valid_ids)} validation patient-sides")
 
@@ -241,24 +204,21 @@ class SiameseDatasetVal(Dataset):
 
             cc_imgs.append(self.load_image(cc_path))
             mlo_imgs.append(self.load_image(mlo_path))
-
             match_labels.append(1.0)
             cc_labels.append(cc_lbl)
             mlo_labels.append(mlo_lbl)
 
-        # negative (fixed cross pid)
-        pid_label = v["CC_pos"][0][1]
-        pool = self.mass_pids if pid_label == self.class_map["Mass"] else self.calc_pids
-        neg_pid = pool[(idx + 1) % len(pool)]
-        neg_v = self.data[neg_pid]
-
+        # negative (lesion ↔ background)
         for i in range(self.K):
-            cc_path, cc_lbl = v["CC_pos"][i]
-            mlo_path, mlo_lbl = neg_v["MLO_pos"][i]
+            if len(v["MLO_neg"]) > 0:
+                cc_path, cc_lbl = v["CC_pos"][i]
+                mlo_path, mlo_lbl = v["MLO_neg"][i % len(v["MLO_neg"])]
+            else:
+                cc_path, cc_lbl = v["CC_neg"][i % len(v["CC_neg"])]
+                mlo_path, mlo_lbl = v["MLO_pos"][i]
 
             cc_imgs.append(self.load_image(cc_path))
             mlo_imgs.append(self.load_image(mlo_path))
-
             match_labels.append(0.0)
             cc_labels.append(cc_lbl)
             mlo_labels.append(mlo_lbl)
@@ -267,15 +227,13 @@ class SiameseDatasetVal(Dataset):
             torch.stack(cc_imgs),
             torch.stack(mlo_imgs)
         ), (
-            torch.tensor(match_labels).float(),
-            torch.tensor(cc_labels).long(),
-            torch.tensor(mlo_labels).long()
+            torch.tensor(match_labels),
+            torch.tensor(cc_labels),
+            torch.tensor(mlo_labels)
         )
 
     def load_image(self, path):
         return self.to_tensor(Image.open(path).convert("RGB"))
-
-
 
 # ===============================================================
 # Correct collate function
